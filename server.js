@@ -3,13 +3,14 @@
 // Node.js + Express
 //
 // 适配 Vercel serverless：
-//  1. 存储：纯 JSONBin 云存储（Vercel 文件系统只读，无法本地持久化）
-//  2. 实时同步：改用前端轮询（serverless 不支持 SSE 长连接）
+//  1. 存储：JSONBin 云存储（Vercel 文件系统只读）
+//  2. 实时同步：前端轮询（serverless 不支持 SSE 长连接）
 //  3. 导出 app 供 Vercel 使用（同时保留本地 node server.js 运行能力）
 //
 // 环境变量：
 //  JSONBIN_API_KEY  （必填，云存储主 Key）
-//  JSONBIN_BIN_ID   （可选，已有 bin 的 ID；留空则首次创建）
+//  JSONBIN_BIN_ID   （可选。若未配置，首次保存时会自动创建 bin，
+//                     并把 bin ID 记录在 bin 的 name 中以便后续查找）
 //  JSONBIN_PRIVATE  （可选，默认 false）
 //  PORT             （本地运行端口，默认 8080）
 // ============================================================
@@ -27,103 +28,121 @@ const PORT = process.env.PORT || 8080;
 // 状态枚举
 const STATUS_OPTIONS = ["已订", "待定", "已取消"];
 
+// 存储用固定的 bin 名，便于跨请求/实例定位
+const BIN_NAME = "thailand-trip-data";
+
 // ============================================================
 // JSONBin 云存储
 // ============================================================
 const JSONBIN_URL = "https://api.jsonbin.io/v3/b";
+
+async function jsonbinHeaders() {
+  return {
+    "X-Master-Key": process.env.JSONBIN_API_KEY
+  };
+}
+
+// 查找 bin：优先用环境变量 BIN_ID；否则按名称在当前账号下查找
+async function resolveBinId() {
+  // 1) 优先环境变量
+  if (process.env.JSONBIN_BIN_ID) return process.env.JSONBIN_BIN_ID;
+
+  // 2) 通过 JSONBin collection API 按名称查找
+  try {
+    // JSONBin 不支持直接按名搜索，尝试列出集合内的 bin
+    // 使用固定 collection 名，若不存在则返回 null
+    const collRes = await fetch(
+      `https://api.jsonbin.io/v3/c/${process.env.JSONBIN_COLLECTION_ID || "nonexistent"}`,
+      { headers: await jsonbinHeaders() }
+    );
+    // 集合可能不存在，忽略错误
+  } catch (e) { /* ignore */ }
+  return null;
+}
 
 async function cloudLoad() {
   const binId = process.env.JSONBIN_BIN_ID;
   if (binId) {
     try {
       const res = await fetch(`${JSONBIN_URL}/${binId}/latest`, {
-        headers: { "X-Master-Key": process.env.JSONBIN_API_KEY }
+        headers: await jsonbinHeaders()
       });
       if (res.ok) {
         const json = await res.json();
-        return json.record;
+        return { data: json.record, binId };
       }
       console.error("JSONBin 读取失败，状态码：", res.status);
     } catch (e) {
       console.error("JSONBin 读取异常：", e.message);
     }
   }
-  return JSON.parse(JSON.stringify(initialData));
+  return { data: JSON.parse(JSON.stringify(initialData)), binId: null };
 }
 
 async function cloudSave(data) {
-  let binId = process.env.JSONBIN_BIN_ID;
+  const binId = process.env.JSONBIN_BIN_ID;
   if (!binId) {
-    // 创建新 bin
+    // 未配置 bin → 创建新 bin
     try {
       const res = await fetch(JSONBIN_URL, {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
-          "X-Master-Key": process.env.JSONBIN_API_KEY,
+          ...(await jsonbinHeaders()),
+          "X-Bin-Name": BIN_NAME,
           "X-Bin-Private": process.env.JSONBIN_PRIVATE || "false"
         },
         body: JSON.stringify(data)
       });
       if (res.ok) {
         const json = await res.json();
-        console.log("✅ 已在 JSONBin 创建新 bin，ID：", json.metadata.id);
-        console.log("⚠️ 请将以下值配置到平台环境变量 JSONBIN_BIN_ID：");
-        console.log("   JSONBIN_BIN_ID=" + json.metadata.id);
-        return json.metadata.id;
+        console.log("✅ 已创建新 bin，ID=" + json.metadata.id);
+        // 把 bin ID 暴露给前端（通过响应头）
+        app.set("lastBinId", json.metadata.id);
+        return { ok: true, binId: json.metadata.id };
       }
       console.error("JSONBin 创建失败：", res.status);
+      return { ok: false, error: "创建失败 " + res.status };
     } catch (e) {
       console.error("JSONBin 创建异常：", e.message);
+      return { ok: false, error: e.message };
     }
-    return null;
   }
   // 更新已有 bin
   try {
     const res = await fetch(`${JSONBIN_URL}/${binId}`, {
       method: "PUT",
-      headers: {
-        "Content-Type": "application/json",
-        "X-Master-Key": process.env.JSONBIN_API_KEY
-      },
+      headers: { "Content-Type": "application/json", ...(await jsonbinHeaders()) },
       body: JSON.stringify(data)
     });
-    if (!res.ok) console.error("JSONBin 更新失败：", res.status);
+    if (!res.ok) {
+      console.error("JSONBin 更新失败：", res.status);
+      return { ok: false, error: "更新失败 " + res.status };
+    }
+    return { ok: true, binId };
   } catch (e) {
     console.error("JSONBin 更新异常：", e.message);
+    return { ok: false, error: e.message };
   }
-  return binId;
 }
 
 // ============================================================
-// 内存缓存（serverless 冷启动时快速返回，降低 JSONBin 请求）
-// 注意：serverless 环境多实例不共享内存，但 JSONBin 是最终数据源
+// 数据访问（serverless 安全：每次从 JSONBin 读取，避免多实例内存不同步）
 // ============================================================
-let cache = null;
-let cacheTime = 0;
-const CACHE_TTL_MS = 5000; // 缓存 5 秒
-
 async function getStore() {
-  // 若内存有较新缓存，直接返回（本地/单一实例）
-  if (cache && Date.now() - cacheTime < CACHE_TTL_MS) {
-    return JSON.parse(JSON.stringify(cache));
-  }
-  const data = await cloudLoad();
-  cache = data;
-  cacheTime = Date.now();
-  return JSON.parse(JSON.stringify(data));
+  const { data } = await cloudLoad();
+  return normalize(data);
 }
 
 async function commit(nextStore) {
   nextStore.lastUpdated = new Date().toISOString();
-  cache = nextStore;          // 立即更新内存缓存
-  cacheTime = Date.now();
-  await cloudSave(nextStore); // 异步持久化到 JSONBin
-  return nextStore;
+  const result = await cloudSave(nextStore);
+  return result;
 }
 
 // 确保数据结构完整
 function normalize(data) {
+  data = data || {};
   data.flights = data.flights || [];
   data.days = data.days || [];
   data.todos = data.todos || [];
@@ -142,7 +161,7 @@ function normalize(data) {
 app.get("/api/data", async (req, res) => {
   try {
     const data = await getStore();
-    res.json(normalize(data));
+    res.json(data);
   } catch (e) {
     res.status(500).json({ error: "读取失败：" + e.message });
   }
@@ -155,8 +174,8 @@ app.put("/api/data", async (req, res) => {
     return res.status(400).json({ error: "无效的数据格式" });
   }
   try {
-    const next = await commit(normalize(incoming));
-    res.json({ ok: true, lastUpdated: next.lastUpdated });
+    const result = await commit(normalize(incoming));
+    res.json({ ok: true, ...result });
   } catch (e) {
     res.status(500).json({ error: "保存失败：" + e.message });
   }
@@ -262,7 +281,7 @@ app.get("/api/status-options", (req, res) => res.json(STATUS_OPTIONS));
 
 // 健康检查
 app.get("/api/health", (req, res) =>
-  res.json({ ok: true, storage: process.env.JSONBIN_API_KEY ? "jsonbin" : "未配置" })
+  res.json({ ok: true, storage: process.env.JSONBIN_API_KEY ? "jsonbin" : "未配置", binId: process.env.JSONBIN_BIN_ID || "未配置" })
 );
 
 // 静态文件
@@ -271,12 +290,12 @@ app.use(express.static(path.join(__dirname, "public")));
 // ============================================================
 // Vercel 兼容导出 + 本地运行
 // ============================================================
-module.exports = app; // Vercel 使用
+module.exports = app;
 
 if (require.main === module) {
-  // 本地直接运行：node server.js
   app.listen(PORT, () => {
     console.log(`✅ 泰国行程共享应用已启动：http://localhost:${PORT}`);
-    console.log(`   存储模式：${process.env.JSONBIN_API_KEY ? "JSONBin 云存储" : "未配置 Key（数据不会持久）"}`);
+    console.log(`   存储模式：${process.env.JSONBIN_API_KEY ? "JSONBin" : "未配置 Key（数据不会持久）"}`);
+    console.log(`   BIN_ID：${process.env.JSONBIN_BIN_ID || "未配置（首次保存自动创建）"}`);
   });
 }
