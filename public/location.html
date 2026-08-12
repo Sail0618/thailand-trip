@@ -1,0 +1,68 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>📍 实时位置共享 · 泰国行程</title>
+<link rel="stylesheet" href="style.css">
+<style>
+body{background:var(--bg)}
+.loc-hero{background:linear-gradient(135deg,#0B6E99,#0D7D6B);color:#fff;padding:28px 20px;text-align:center}
+.loc-hero h1{font-size:1.6em;margin-bottom:6px}
+.loc-hero .sub{opacity:.9;font-size:.9em}
+#map{width:100%;height:calc(100vh - 180px);min-height:400px}
+.loc-toolbar{max-width:1000px;margin:0 auto;padding:12px 16px;display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:10px}
+.loc-toolbar .info{font-size:.85em;color:var(--text-l)}
+.loc-toolbar .name-input{display:flex;gap:8px;align-items:center}
+.loc-toolbar input{width:120px;padding:7px 10px;border:1.5px solid var(--border);border-radius:8px;font-size:.9em}
+.loc-toolbar .btn{padding:8px 16px;border-radius:20px;border:none;cursor:pointer;font-weight:600;font-size:.85em}
+.btn-start{background:#0D7D6B;color:#fff}
+.btn-start.active{background:var(--accent)}
+.btn-stop{background:#E85D4E;color:#fff}
+.loc-status{padding:4px 14px;border-radius:12px;font-size:.8em;font-weight:600}
+.loc-status.on{background:#E8F5E9;color:#2E7D32}
+.loc-status.off{background:#FFEBEE;color:#C62828}
+#member-list{max-width:1000px;margin:10px auto;padding:0 16px;display:flex;flex-wrap:wrap;gap:8px}
+.member-chip{display:flex;align-items:center;gap:6px;background:#fff;border:1px solid var(--border);border-radius:20px;padding:4px 12px;font-size:.8em}
+.member-chip .dot{width:10px;height:10px;border-radius:50%}
+.member-chip .time{color:var(--text-l);font-size:.7em}
+.footer{text-align:center;padding:14px;color:var(--text-l);font-size:.8em}
+</style>
+</head>
+<body>
+
+<div class="loc-hero">
+  <h1>📍 实时位置共享</h1>
+  <div class="sub">泰国 11 日行程 · 8 人团 · 防走散 / 集合找人</div>
+</div>
+
+<div class="loc-toolbar">
+  <div class="info">
+    <span class="loc-status off" id="loc-status">未开始共享</span>
+    <span style="margin-left:8px">打开页面 + 允许定位即可被大家看到</span>
+  </div>
+  <div class="name-input">
+    <input type="text" id="my-name" placeholder="输入你的名字" maxlength="10">
+    <button class="btn btn-start" id="btn-toggle">▶ 开始共享位置</button>
+  </div>
+</div>
+
+<!-- 地图容器 -->
+<div id="map"></div>
+
+<!-- 成员列表 -->
+<div id="member-list"></div>
+
+<div class="footer">
+  <p>定位仅在页面打开时更新（约每 15 秒）。手机锁屏/切后台会暂停。离开页面请点"停止共享"。</p>
+  <a href="/" style="color:var(--primary)">← 返回行程主页</a>
+</div>
+
+<!-- 高德地图 SDK（需在 html 里配置 key） -->
+<script>
+// 高德地图 JS API 通过 script 引入，key 由占位符替换
+window._AMapSecurityConfig = { securityJsCode: "AMAP_SECURITY_CODE" };
+</script>
+<script src="location.js"></script>
+</body>
+</html>

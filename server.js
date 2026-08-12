@@ -147,6 +147,7 @@ function normalize(data) {
   data.days = data.days || [];
   data.todos = data.todos || [];
   data.budget = data.budget || [];
+  data.locations = data.locations || []; // 位置共享数据
   data.meta = data.meta || initialData.meta;
   if (!data.alert) data.alert = initialData.alert;
   data.lastUpdated = data.lastUpdated || null;
@@ -278,6 +279,61 @@ app.post("/api/budget/:id", async (req, res) => {
 
 // 状态选项
 app.get("/api/status-options", (req, res) => res.json(STATUS_OPTIONS));
+
+// ---------- 位置共享 ----------
+
+// 上报/更新某人的位置（upsert：按 id 覆盖）
+app.post("/api/locations", async (req, res) => {
+  try {
+    const body = req.body || {};
+    if (!body.name || typeof body.lat !== "number" || typeof body.lng !== "number") {
+      return res.status(400).json({ error: "需要 name、lat、lng 字段" });
+    }
+    const current = await getStore();
+    const id = body.id || ("user_" + (body.name || "").replace(/\s+/g, "_"));
+    const idx = current.locations.findIndex((l) => l.id === id);
+    const entry = {
+      id,
+      name: body.name,
+      lat: body.lat,
+      lng: body.lng,
+      accuracy: body.accuracy || null,
+      color: body.color || null,
+      updatedAt: Date.now()
+    };
+    if (idx === -1) {
+      current.locations.push(entry);
+    } else {
+      current.locations[idx] = entry;
+    }
+    await commit(current);
+    res.json({ ok: true, id });
+  } catch (e) {
+    res.status(500).json({ error: "保存失败：" + e.message });
+  }
+});
+
+// 删除某人的位置（离开定位页时调用）
+app.delete("/api/locations/:id", async (req, res) => {
+  try {
+    const current = await getStore();
+    current.locations = current.locations.filter((l) => l.id !== req.params.id);
+    await commit(current);
+    res.json({ ok: true });
+  } catch (e) {
+    res.status(500).json({ error: "删除失败：" + e.message });
+  }
+});
+
+// 获取所有位置（供地图页面轮询）
+app.get("/api/locations", async (req, res) => {
+  try {
+    const data = await getStore();
+    res.json(data.locations || []);
+  } catch (e) {
+    res.status(500).json({ error: "读取失败：" + e.message });
+  }
+});
 
 // 健康检查
 app.get("/api/health", (req, res) =>
