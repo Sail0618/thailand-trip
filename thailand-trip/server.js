@@ -1,84 +1,42 @@
 // ============================================================
-// 泰国 11 日行程 · 在线共享编辑应用 — 后端服务
-// Node.js + Express + SSE 实时推送
+// 泰国 11 日行程 · 在线共享编辑应用 — 后端服务（Vercel 适配版）
+// Node.js + Express
 //
-// 数据持久化策略（Storage 抽象）：
-//  1. 若配置了 JSONBIN_API_KEY → 使用云 JSON 存储（免费，重启不丢，适合托管平台）
-//  2. 否则 → 回退到本地文件 data/store.json（本地开发测试用）
+// 适配 Vercel serverless：
+//  1. 存储：纯 JSONBin 云存储（Vercel 文件系统只读，无法本地持久化）
+//  2. 实时同步：改用前端轮询（serverless 不支持 SSE 长连接）
+//  3. 导出 app 供 Vercel 使用（同时保留本地 node server.js 运行能力）
 //
-// 使用：
-//  node server.js
-//  环境变量：PORT（默认 8080）、JSONBIN_API_KEY、JSONBIN_BIN_ID、JSONBIN_PRIVATE
+// 环境变量：
+//  JSONBIN_API_KEY  （必填，云存储主 Key）
+//  JSONBIN_BIN_ID   （可选，已有 bin 的 ID；留空则首次创建）
+//  JSONBIN_PRIVATE  （可选，默认 false）
+//  PORT             （本地运行端口，默认 8080）
 // ============================================================
 
 const express = require("express");
 const path = require("path");
-const fs = require("fs");
-const http = require("http");
 
 const { initialData } = require("./data/schema");
 
 const app = express();
 app.use(express.json({ limit: "2mb" }));
-const server = http.createServer(app);
 
 const PORT = process.env.PORT || 8080;
 
-// ============================================================
-// 内存状态
-// ============================================================
-let store = JSON.parse(JSON.stringify(initialData)); // 当前数据（深拷贝）
-let writeQueue = Promise.resolve();                    // 串行化写操作，避免并发覆盖
-let sseClients = new Set();                            // SSE 连接集合
-
-// 状态枚举（前端可选项）
+// 状态枚举
 const STATUS_OPTIONS = ["已订", "待定", "已取消"];
 
 // ============================================================
-// Storage 抽象：云 JSON 存储 / 本地文件回退
+// JSONBin 云存储
 // ============================================================
-const LOCAL_FILE = path.join(__dirname, "data", "store.json");
+const JSONBIN_URL = "https://api.jsonbin.io/v3/b";
 
-const storage = {
-  isCloud() {
-    return !!process.env.JSONBIN_API_KEY;
-  },
-
-  // 读取
-  async load() {
-    if (this.isCloud()) {
-      return this._cloudLoad();
-    }
-    // 本地回退
+async function cloudLoad() {
+  const binId = process.env.JSONBIN_BIN_ID;
+  if (binId) {
     try {
-      if (fs.existsSync(LOCAL_FILE)) {
-        const raw = fs.readFileSync(LOCAL_FILE, "utf-8");
-        return JSON.parse(raw);
-      }
-    } catch (e) {
-      console.error("本地读取失败，使用初始数据：", e.message);
-    }
-    return JSON.parse(JSON.stringify(initialData));
-  },
-
-  // 写入
-  async save(data) {
-    if (this.isCloud()) {
-      return this._cloudSave(data);
-    }
-    try {
-      fs.mkdirSync(path.dirname(LOCAL_FILE), { recursive: true });
-      fs.writeFileSync(LOCAL_FILE, JSON.stringify(data, null, 2), "utf-8");
-    } catch (e) {
-      console.error("本地写入失败：", e.message);
-    }
-  },
-
-  // ---- 云 JSONBin.io ----
-  async _cloudLoad() {
-    const binId = process.env.JSONBIN_BIN_ID;
-    if (binId) {
-      const res = await fetch(`https://api.jsonbin.io/v3/b/${binId}/latest`, {
+      const res = await fetch(`${JSONBIN_URL}/${binId}/latest`, {
         headers: { "X-Master-Key": process.env.JSONBIN_API_KEY }
       });
       if (res.ok) {
@@ -86,16 +44,19 @@ const storage = {
         return json.record;
       }
       console.error("JSONBin 读取失败，状态码：", res.status);
+    } catch (e) {
+      console.error("JSONBin 读取异常：", e.message);
     }
-    // 没有 bin 或读取失败，返回初始数据（后续 save 时会创建 bin）
-    return JSON.parse(JSON.stringify(initialData));
-  },
+  }
+  return JSON.parse(JSON.stringify(initialData));
+}
 
-  async _cloudSave(data) {
-    let binId = process.env.JSONBIN_BIN_ID;
-    if (!binId) {
-      // 创建新 bin
-      const res = await fetch("https://api.jsonbin.io/v3/b", {
+async function cloudSave(data) {
+  let binId = process.env.JSONBIN_BIN_ID;
+  if (!binId) {
+    // 创建新 bin
+    try {
+      const res = await fetch(JSONBIN_URL, {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
@@ -106,22 +67,20 @@ const storage = {
       });
       if (res.ok) {
         const json = await res.json();
-        binId = json.metadata.id;
-        // 把新 bin id 记录下来（写入一个本地文件提示用户更新环境变量）
-        fs.mkdirSync(path.dirname(LOCAL_FILE), { recursive: true });
-        fs.writeFileSync(
-          path.join(__dirname, "data", "BIN_ID.txt"),
-          `JSONBIN_BIN_ID=${binId}\n请将以上值加入你的托管平台环境变量，避免重复创建 bin。`,
-          "utf-8"
-        );
-        console.log("已在 JSONBin 创建新 bin：", binId);
-      } else {
-        console.error("JSONBin 创建失败：", res.status, await res.text());
+        console.log("✅ 已在 JSONBin 创建新 bin，ID：", json.metadata.id);
+        console.log("⚠️ 请将以下值配置到平台环境变量 JSONBIN_BIN_ID：");
+        console.log("   JSONBIN_BIN_ID=" + json.metadata.id);
+        return json.metadata.id;
       }
-      return;
+      console.error("JSONBin 创建失败：", res.status);
+    } catch (e) {
+      console.error("JSONBin 创建异常：", e.message);
     }
-    // 更新已有 bin
-    const res = await fetch(`https://api.jsonbin.io/v3/b/${binId}`, {
+    return null;
+  }
+  // 更新已有 bin
+  try {
+    const res = await fetch(`${JSONBIN_URL}/${binId}`, {
       method: "PUT",
       headers: {
         "Content-Type": "application/json",
@@ -129,195 +88,195 @@ const storage = {
       },
       body: JSON.stringify(data)
     });
-    if (!res.ok) {
-      console.error("JSONBin 更新失败：", res.status);
-    }
+    if (!res.ok) console.error("JSONBin 更新失败：", res.status);
+  } catch (e) {
+    console.error("JSONBin 更新异常：", e.message);
   }
-};
-
-// ============================================================
-// 工具函数
-// ============================================================
-// 广播数据变更给所有 SSE 客户端
-function broadcast() {
-  const payload = `data: ${JSON.stringify({ type: "update", data: store })}\n\n`;
-  sseClients.forEach((res) => {
-    try {
-      res.write(payload);
-    } catch (e) {
-      sseClients.delete(res);
-    }
-  });
-}
-
-// 串行写：保证并发请求不互相覆盖
-function commit(nextStore) {
-  store = nextStore;
-  store.lastUpdated = new Date().toISOString();
-  writeQueue = writeQueue.then(() => storage.save(store)).catch((e) => console.error("持久化失败：", e.message));
-  broadcast();
+  return binId;
 }
 
 // ============================================================
-// REST API
+// 内存缓存（serverless 冷启动时快速返回，降低 JSONBin 请求）
+// 注意：serverless 环境多实例不共享内存，但 JSONBin 是最终数据源
+// ============================================================
+let cache = null;
+let cacheTime = 0;
+const CACHE_TTL_MS = 5000; // 缓存 5 秒
+
+async function getStore() {
+  // 若内存有较新缓存，直接返回（本地/单一实例）
+  if (cache && Date.now() - cacheTime < CACHE_TTL_MS) {
+    return JSON.parse(JSON.stringify(cache));
+  }
+  const data = await cloudLoad();
+  cache = data;
+  cacheTime = Date.now();
+  return JSON.parse(JSON.stringify(data));
+}
+
+async function commit(nextStore) {
+  nextStore.lastUpdated = new Date().toISOString();
+  cache = nextStore;          // 立即更新内存缓存
+  cacheTime = Date.now();
+  await cloudSave(nextStore); // 异步持久化到 JSONBin
+  return nextStore;
+}
+
+// 确保数据结构完整
+function normalize(data) {
+  data.flights = data.flights || [];
+  data.days = data.days || [];
+  data.todos = data.todos || [];
+  data.budget = data.budget || [];
+  data.meta = data.meta || initialData.meta;
+  if (!data.alert) data.alert = initialData.alert;
+  data.lastUpdated = data.lastUpdated || null;
+  return data;
+}
+
+// ============================================================
+// API 路由
 // ============================================================
 
 // 获取全量数据
-app.get("/api/data", (req, res) => {
-  res.json(store);
+app.get("/api/data", async (req, res) => {
+  try {
+    const data = await getStore();
+    res.json(normalize(data));
+  } catch (e) {
+    res.status(500).json({ error: "读取失败：" + e.message });
+  }
 });
 
-// 覆盖式更新（前端做增量合并后整包提交）
-app.put("/api/data", (req, res) => {
+// 覆盖式更新
+app.put("/api/data", async (req, res) => {
   const incoming = req.body;
   if (!incoming || typeof incoming !== "object") {
     return res.status(400).json({ error: "无效的数据格式" });
   }
-  commit(incoming);
-  res.json({ ok: true, lastUpdated: store.lastUpdated });
+  try {
+    const next = await commit(normalize(incoming));
+    res.json({ ok: true, lastUpdated: next.lastUpdated });
+  } catch (e) {
+    res.status(500).json({ error: "保存失败：" + e.message });
+  }
 });
 
 // 更新单个航班
-app.post("/api/flights/:id", (req, res) => {
-  const id = req.params.id;
-  const patch = req.body;
-  const idx = store.flights.findIndex((f) => f.id === id);
-  if (idx === -1) return res.status(404).json({ error: "航班不存在" });
-  const next = JSON.parse(JSON.stringify(store));
-  next.flights[idx] = { ...next.flights[idx], ...patch };
-  commit(next);
-  res.json({ ok: true });
+app.post("/api/flights/:id", async (req, res) => {
+  try {
+    const current = await getStore();
+    const idx = current.flights.findIndex((f) => f.id === req.params.id);
+    if (idx === -1) return res.status(404).json({ error: "航班不存在" });
+    current.flights[idx] = { ...current.flights[idx], ...(req.body || {}) };
+    await commit(current);
+    res.json({ ok: true });
+  } catch (e) {
+    res.status(500).json({ error: "保存失败：" + e.message });
+  }
 });
 
 // 新增航班
-app.post("/api/flights", (req, res) => {
-  const body = req.body || {};
-  const next = JSON.parse(JSON.stringify(store));
-  const newFlight = {
-    id: "f" + Date.now(),
-    date: body.date || "",
-    route: body.route || "新航线",
-    dep: body.dep || "",
-    arr: body.arr || "",
-    flightNo: body.flightNo || "",
-    bookingNo: body.bookingNo || "",
-    status: STATUS_OPTIONS.includes(body.status) ? body.status : "待定",
-    note: body.note || ""
-  };
-  next.flights.push(newFlight);
-  commit(next);
-  res.json({ ok: true, id: newFlight.id });
+app.post("/api/flights", async (req, res) => {
+  try {
+    const current = await getStore();
+    const body = req.body || {};
+    current.flights.push({
+      id: "f" + Date.now(),
+      date: body.date || "", route: body.route || "新航线",
+      dep: body.dep || "", arr: body.arr || "",
+      flightNo: body.flightNo || "", bookingNo: body.bookingNo || "",
+      status: STATUS_OPTIONS.includes(body.status) ? body.status : "待定",
+      note: body.note || ""
+    });
+    await commit(current);
+    res.json({ ok: true });
+  } catch (e) {
+    res.status(500).json({ error: "保存失败：" + e.message });
+  }
 });
 
 // 删除航班
-app.delete("/api/flights/:id", (req, res) => {
-  const id = req.params.id;
-  const next = JSON.parse(JSON.stringify(store));
-  next.flights = next.flights.filter((f) => f.id !== id);
-  commit(next);
-  res.json({ ok: true });
+app.delete("/api/flights/:id", async (req, res) => {
+  try {
+    const current = await getStore();
+    current.flights = current.flights.filter((f) => f.id !== req.params.id);
+    await commit(current);
+    res.json({ ok: true });
+  } catch (e) {
+    res.status(500).json({ error: "删除失败：" + e.message });
+  }
 });
 
-// 待办：切换勾选 / 更新
-app.post("/api/todos/:id", (req, res) => {
-  const id = req.params.id;
-  const patch = req.body || {};
-  const next = JSON.parse(JSON.stringify(store));
-  const idx = next.todos.findIndex((t) => t.id === id);
-  if (idx === -1) return res.status(404).json({ error: "待办不存在" });
-  next.todos[idx] = { ...next.todos[idx], ...patch };
-  commit(next);
-  res.json({ ok: true });
+// 待办
+app.post("/api/todos/:id", async (req, res) => {
+  try {
+    const current = await getStore();
+    const idx = current.todos.findIndex((t) => t.id === req.params.id);
+    if (idx === -1) return res.status(404).json({ error: "待办不存在" });
+    current.todos[idx] = { ...current.todos[idx], ...(req.body || {}) };
+    await commit(current);
+    res.json({ ok: true });
+  } catch (e) {
+    res.status(500).json({ error: "保存失败：" + e.message });
+  }
+});
+app.post("/api/todos", async (req, res) => {
+  try {
+    const current = await getStore();
+    const body = req.body || {};
+    current.todos.push({ id: "t" + Date.now(), category: body.category || "其他", text: body.text || "新待办", done: false });
+    await commit(current);
+    res.json({ ok: true });
+  } catch (e) {
+    res.status(500).json({ error: "保存失败：" + e.message });
+  }
+});
+app.delete("/api/todos/:id", async (req, res) => {
+  try {
+    const current = await getStore();
+    current.todos = current.todos.filter((t) => t.id !== req.params.id);
+    await commit(current);
+    res.json({ ok: true });
+  } catch (e) {
+    res.status(500).json({ error: "删除失败：" + e.message });
+  }
 });
 
-// 预算：更新金额
-app.post("/api/budget/:id", (req, res) => {
-  const id = req.params.id;
-  const patch = req.body || {};
-  const next = JSON.parse(JSON.stringify(store));
-  const idx = next.budget.findIndex((b) => b.id === id);
-  if (idx === -1) return res.status(404).json({ error: "预算项不存在" });
-  next.budget[idx] = { ...next.budget[idx], ...patch };
-  commit(next);
-  res.json({ ok: true });
-});
-
-// 添加待办
-app.post("/api/todos", (req, res) => {
-  const body = req.body || {};
-  const next = JSON.parse(JSON.stringify(store));
-  const newTodo = {
-    id: "t" + Date.now(),
-    category: body.category || "其他",
-    text: body.text || "新待办",
-    done: false
-  };
-  next.todos.push(newTodo);
-  commit(next);
-  res.json({ ok: true, id: newTodo.id });
-});
-
-// 删除待办
-app.delete("/api/todos/:id", (req, res) => {
-  const id = req.params.id;
-  const next = JSON.parse(JSON.stringify(store));
-  next.todos = next.todos.filter((t) => t.id !== id);
-  commit(next);
-  res.json({ ok: true });
-});
-
-// ============================================================
-// SSE 实时推送
-// ============================================================
-app.get("/api/events", (req, res) => {
-  res.setHeader("Content-Type", "text/event-stream");
-  res.setHeader("Cache-Control", "no-cache");
-  res.setHeader("Connection", "keep-alive");
-  res.flushHeaders();
-
-  sseClients.add(res);
-  // 连接建立后立即推一次当前数据
-  res.write(`data: ${JSON.stringify({ type: "hello", data: store })}\n\n`);
-
-  req.on("close", () => sseClients.delete(res));
+// 预算
+app.post("/api/budget/:id", async (req, res) => {
+  try {
+    const current = await getStore();
+    const idx = current.budget.findIndex((b) => b.id === req.params.id);
+    if (idx === -1) return res.status(404).json({ error: "预算项不存在" });
+    current.budget[idx] = { ...current.budget[idx], ...(req.body || {}) };
+    await commit(current);
+    res.json({ ok: true });
+  } catch (e) {
+    res.status(500).json({ error: "保存失败：" + e.message });
+  }
 });
 
 // 状态选项
-app.get("/api/status-options", (req, res) => {
-  res.json(STATUS_OPTIONS);
-});
-
-// ============================================================
-// 静态文件
-// ============================================================
-app.use(express.static(path.join(__dirname, "public")));
+app.get("/api/status-options", (req, res) => res.json(STATUS_OPTIONS));
 
 // 健康检查
-app.get("/api/health", (req, res) => res.json({ ok: true, cloud: storage.isCloud() }));
+app.get("/api/health", (req, res) =>
+  res.json({ ok: true, storage: process.env.JSONBIN_API_KEY ? "jsonbin" : "未配置" })
+);
+
+// 静态文件
+app.use(express.static(path.join(__dirname, "public")));
 
 // ============================================================
-// 启动
+// Vercel 兼容导出 + 本地运行
 // ============================================================
-async function start() {
-  try {
-    store = await storage.load();
-    // 兼容旧数据：确保必备字段存在
-    store.flights = store.flights || [];
-    store.days = store.days || [];
-    store.todos = store.todos || [];
-    store.budget = store.budget || [];
-    store.meta = store.meta || initialData.meta;
-    if (!store.alert) store.alert = initialData.alert;
-    store.lastUpdated = store.lastUpdated || null;
-    console.log("数据已加载。存储模式：", storage.isCloud() ? "云端 JSONBin" : "本地文件");
-  } catch (e) {
-    console.error("启动加载失败，使用初始数据：", e.message);
-  }
+module.exports = app; // Vercel 使用
 
-  server.listen(PORT, () => {
+if (require.main === module) {
+  // 本地直接运行：node server.js
+  app.listen(PORT, () => {
     console.log(`✅ 泰国行程共享应用已启动：http://localhost:${PORT}`);
-    console.log(`   分享给朋友时，提供完整 URL 即可共同编辑（无需登录）`);
+    console.log(`   存储模式：${process.env.JSONBIN_API_KEY ? "JSONBin 云存储" : "未配置 Key（数据不会持久）"}`);
   });
 }
-
-start();

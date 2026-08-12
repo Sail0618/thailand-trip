@@ -127,7 +127,11 @@ function renderTodos() {
       if (e.target.closest('[data-act="del-todo"]')) return;
       const id = item.dataset.id;
       const todo = data.todos.find((t) => t.id === id);
-      apiPost(`/api/todos/${id}`, { done: !todo.done });
+      // 乐观更新：立即切换本地状态并重渲染，获得即时反馈
+      todo.done = !todo.done;
+      renderTodos();
+      // 后台同步到服务器
+      apiPost(`/api/todos/${id}`, { done: todo.done });
     });
     item.querySelector('[data-act="del-todo"]').addEventListener("click", (e) => {
       e.stopPropagation();
@@ -252,22 +256,34 @@ async function apiDelete(url) {
 }
 
 // ============================================================
-// SSE 实时同步
+// 实时同步（轮询方式，兼容 Vercel serverless）
+// 每 4 秒拉取一次最新数据，实现多端共同编辑
 // ============================================================
+let polling = false;
+async function poll() {
+  if (polling) return;
+  polling = true;
+  try {
+    const res = await fetch("/api/data", { cache: "no-store" });
+    if (!res.ok) throw new Error("加载失败");
+    const fresh = await res.json();
+    const freshKey = JSON.stringify(fresh.lastUpdated) + fresh.flights?.length;
+    const curKey = JSON.stringify(data?.lastUpdated) + data?.flights?.length;
+    if (!data || freshKey !== curKey) {
+      data = fresh;
+      renderAll();
+    }
+    setSync("online", "实时同步中");
+  } catch (e) {
+    setSync("offline", "连接中断，重试中…");
+  } finally {
+    polling = false;
+  }
+}
 function setupSSE() {
-  const es = new EventSource("/api/events");
-  es.onopen = () => setSync("online", "实时同步中");
-  es.onerror = () => setSync("offline", "连接断开，正在重连…");
-  es.onmessage = (evt) => {
-    try {
-      const msg = JSON.parse(evt.data);
-      if (msg.data) {
-        data = msg.data;
-        renderAll();
-        setSync("online", "已同步 " + fmtTime(msg.data.lastUpdated));
-      }
-    } catch (e) { /* ignore */ }
-  };
+  // 立即轮询一次，然后定时轮询
+  poll();
+  setInterval(poll, 4000);
 }
 
 function setSync(state, text) {
