@@ -1,0 +1,157 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>泰国 11 日行程 · 在线共享</title>
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+
+<!-- Hero -->
+<div class="hero">
+  <h1 id="hero-title">🇹🇭 泰国 11 日完整行程</h1>
+  <div class="sub" id="hero-sub">曼谷 · 芭提雅 · 清迈 · 皮皮岛 · 甲米</div>
+  <div class="meta">
+    <span id="meta-date">📅 2026.09.24 → 10.04</span>
+    <span id="meta-group">👥 8 人团</span>
+    <span id="meta-edit" class="edit-badge">✏️ 在线协作编辑中</span>
+  </div>
+</div>
+
+<!-- 顶部工具条 -->
+<div class="toolbar">
+  <div class="toolbar-left">
+    <div class="sync-status" id="sync-status">
+      <span class="dot"></span><span id="sync-text">连接中…</span>
+    </div>
+  </div>
+  <div class="toolbar-right">
+    <button class="btn btn-outline" id="btn-add-flight">➕ 新增航班</button>
+    <button class="btn btn-outline" id="btn-add-todo">➕ 新增待办</button>
+  </div>
+</div>
+
+<div class="container">
+
+  <!-- 冲突提示 -->
+  <div class="alert-box" id="alert-box" style="display:none">
+    <h4 id="alert-title"></h4>
+    <p id="alert-text"></p>
+    <div id="alert-options"></div>
+  </div>
+
+  <!-- ============ 航班总览（核心可编辑） ============ -->
+  <div class="section">
+    <div class="section-header flight">
+      ✈️ 航班总览 <span class="section-hint">（点击可编辑）</span>
+    </div>
+    <div class="section-body" style="overflow-x:auto">
+      <table class="flight-table" id="flight-table">
+        <thead>
+          <tr>
+            <th>日期</th><th>航线</th><th>出发</th><th>到达</th>
+            <th>航班号</th><th>预订号</th><th>状态</th><th>操作</th>
+          </tr>
+        </thead>
+        <tbody id="flight-body"></tbody>
+      </table>
+      <p class="hint-note">💡 点击任意单元格即可修改，改动会实时同步给所有打开此页面的朋友。未订票航班请及时预订。</p>
+    </div>
+  </div>
+
+  <!-- ============ 每日行程 ============ -->
+  <div class="section">
+    <div class="section-header tip">🗓️ 每日行程（11 天）</div>
+    <div class="section-body">
+      <div id="days-container"></div>
+    </div>
+  </div>
+
+  <!-- ============ 待办事项（可勾选） ============ -->
+  <div class="section">
+    <div class="section-header alert">⏳ 待办事项 <span class="section-hint">（点击勾选，多人同步）</span></div>
+    <div class="section-body">
+      <div id="todos-container"></div>
+    </div>
+  </div>
+
+  <!-- ============ 预算估算（可编辑） ============ -->
+  <div class="section">
+    <div class="section-header budget">💰 预算估算（人均，可点击金额修改）</div>
+    <div class="section-body" style="overflow-x:auto">
+      <table class="budget-table" id="budget-table">
+        <thead>
+          <tr><th>项目</th><th>明细</th><th>预估 (¥)</th></tr>
+        </thead>
+        <tbody id="budget-body"></tbody>
+      </table>
+      <p class="hint-note">💡 预算为预估参考，实际花费视订票价格和消费习惯而定。包车包船费用已按 8 人分摊计算。</p>
+    </div>
+  </div>
+
+  <div class="footer">
+    <p>📋 米多多的泰国 11 日完整行程 · 8 人团 · 2026.09.24-10.04 · 在线协作共享版</p>
+    <p>祝旅途愉快！🎉</p>
+  </div>
+
+</div>
+
+<!-- 编辑浮层：航班 -->
+<div class="modal-overlay" id="modal-overlay" style="display:none">
+  <div class="modal">
+    <div class="modal-header" id="modal-title">编辑航班</div>
+    <div class="modal-body">
+      <label>日期</label>
+      <input type="text" id="f-date">
+      <label>航线</label>
+      <input type="text" id="f-route">
+      <label>出发时间</label>
+      <input type="text" id="f-dep">
+      <label>到达时间</label>
+      <input type="text" id="f-arr">
+      <label>航班号</label>
+      <input type="text" id="f-flightNo">
+      <label>预订号</label>
+      <input type="text" id="f-bookingNo">
+      <label>状态</label>
+      <select id="f-status">
+        <option>已订</option>
+        <option>待定</option>
+        <option>已取消</option>
+      </select>
+      <label>备注</label>
+      <input type="text" id="f-note">
+    </div>
+    <div class="modal-footer">
+      <button class="btn btn-danger" id="btn-del-flight" style="display:none">删除</button>
+      <span style="flex:1"></span>
+      <button class="btn btn-outline" id="btn-cancel">取消</button>
+      <button class="btn btn-primary" id="btn-save-flight">保存</button>
+    </div>
+  </div>
+</div>
+
+<!-- 编辑浮层：待办 -->
+<div class="modal-overlay" id="modal-todo-overlay" style="display:none">
+  <div class="modal">
+    <div class="modal-header">新增待办</div>
+    <div class="modal-body">
+      <label>分类</label>
+      <select id="t-category">
+        <option>机票</option><option>船票</option><option>住宿</option><option>活动</option><option>其他</option>
+      </select>
+      <label>内容</label>
+      <input type="text" id="t-text" placeholder="例如：预订某餐厅">
+    </div>
+    <div class="modal-footer">
+      <span style="flex:1"></span>
+      <button class="btn btn-outline" id="btn-cancel-todo">取消</button>
+      <button class="btn btn-primary" id="btn-save-todo">保存</button>
+    </div>
+  </div>
+</div>
+
+<script src="app.js"></script>
+</body>
+</html>
