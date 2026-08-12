@@ -58,10 +58,13 @@ body{background:var(--bg)}
   <a href="/" style="color:var(--primary)">← 返回行程主页</a>
 </div>
 
-<!-- 高德地图 SDK（需在 html 里配置 key） -->
+<!-- 高德地图配置（先加载 config.js，再加载 location.js） -->
+<script src="config.js"></script>
 <script>
-// 高德地图 JS API 通过 script 引入，key 由占位符替换
-window._AMapSecurityConfig = { securityJsCode: "AMAP_SECURITY_CODE" };
+// 高德地图安全配置
+window._AMapSecurityConfig = {
+  securityJsCode: (window.AMAP_CONFIG && window.AMAP_CONFIG.securityCode) || "AMAP_SECURITY_CODE"
+};
 </script>
 <script src="location.js"></script>
 </body>
