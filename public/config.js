@@ -7,6 +7,6 @@
 //   注意：需要在高德控制台配置安全密钥（X-AMAP-SECURITY-CODE）
 // ============================================================
 window.AMAP_CONFIG = {
-  key: "AMAP_KEY_PLACEHOLDER",          // 高德 JS API Key
-  securityCode: "AMAP_SECURITY_CODE"     // 高德安全密钥（securityJsCode）
+  key: "e5b31ab14c321508ae42b34666379499",          // 高德 JS API Key
+  securityCode: "bc6ae4adaedbfa4dc015ab4bc74962eb"     // 高德安全密钥（securityJsCode）
 };
