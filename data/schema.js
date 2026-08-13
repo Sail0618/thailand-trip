@@ -14,14 +14,14 @@ const initialData = {
 
   // ---------- 航班总览（核心，可在线编辑） ----------
   flights: [
-    { id: "f1", date: "9/24 周四", route: "杭州 T4 → 香港 T1", dep: "19:45", arr: "22:20", flightNo: "—", bookingNo: "—", status: "已订", note: "国际段第一程" },
-    { id: "f2", date: "9/25 周五", route: "香港 T1 → 曼谷 BKK", dep: "08:00", arr: "10:00", flightNo: "—", bookingNo: "—", status: "已订", note: "抵达曼谷" },
-    { id: "f3", date: "9/28 周一", route: "曼谷 BKK → 清迈 CNX", dep: "12:25", arr: "13:50", flightNo: "越捷 VZ110", bookingNo: "—", status: "已订", note: "" },
+    { id: "f1", date: "9/24 周四", route: "杭州萧山 T4 → 香港机场 T1", dep: "19:45", arr: "22:20", flightNo: "CX963", bookingNo: "—", status: "已订", note: "国泰航空 · 国际段第一程" },
+    { id: "f2", date: "9/25 周五", route: "香港机场 T1 → 素万那普国际", dep: "08:00", arr: "10:00", flightNo: "CX705", bookingNo: "—", status: "已订", note: "国泰航空 · 抵达曼谷" },
+    { id: "f3", date: "9/28 周一", route: "曼谷 BKK → 清迈 CNX", dep: "待定", arr: "待定", flightNo: "—", bookingNo: "—", status: "待定", note: "" },
     { id: "f4", date: "9/30 周三", route: "清迈 CNX → 曼谷 BKK", dep: "待定", arr: "待定", flightNo: "—", bookingNo: "—", status: "待定", note: "建议选 18:00-22:00 出发" },
     { id: "f5", date: "10/1 周四", route: "曼谷 BKK → 甲米 KBV", dep: "待定", arr: "待定", flightNo: "—", bookingNo: "—", status: "待定", note: "建议选早班机" },
     { id: "f6", date: "10/3 周六", route: "甲米 KBV → 曼谷 BKK", dep: "20:35", arr: "22:05", flightNo: "—", bookingNo: "JF87V5", status: "已订", note: "" },
-    { id: "f7", date: "10/4 周日", route: "曼谷 BKK → 香港 T1", dep: "11:00", arr: "15:05", flightNo: "—", bookingNo: "—", status: "已订", note: "国际段返程" },
-    { id: "f8", date: "10/4 周日", route: "香港 T1 → 杭州 T4", dep: "16:00", arr: "18:30", flightNo: "—", bookingNo: "—", status: "已订", note: "回国" }
+    { id: "f7", date: "10/4 周日", route: "素万那普国际 → 香港机场 T1", dep: "11:00", arr: "15:05", flightNo: "CX750", bookingNo: "—", status: "已订", note: "国泰航空 · 国际段返程" },
+    { id: "f8", date: "10/4 周日", route: "香港机场 T1 → 杭州萧山 T4", dep: "16:00", arr: "18:30", flightNo: "CX962", bookingNo: "—", status: "已订", note: "国泰航空 · 回国" }
   ],
 
   // ---------- 每日行程（11 天，只读参考，可后续扩展编辑） ----------

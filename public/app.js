@@ -310,24 +310,34 @@ function renderFlights() {
   const dash = (v) => escapeHtml(v || "—");
   const cards = flights.map((f) => {
     const cls = STATUS_CLASS[f.status] || "pending";
-    const meta = [];
-    if (f.dep) meta.push(`<span class="m"><em>出发</em>${escapeHtml(f.dep)}</span>`);
-    if (f.arr) meta.push(`<span class="m"><em>到达</em>${escapeHtml(f.arr)}</span>`);
-    if (f.flightNo && f.flightNo !== "—") meta.push(`<span class="m"><em>航班</em>${escapeHtml(f.flightNo)}</span>`);
+    const hasNo = f.flightNo && f.flightNo !== "—";
+    const dur = flightDuration(f.dep, f.arr);
+    const depTxt = f.dep && f.dep !== "待定" ? escapeHtml(f.dep) : null;
+    const arrTxt = f.arr && f.arr !== "待定" ? escapeHtml(f.arr) : null;
     return `
       <div class="flight-card ${cls}" data-id="${escapeHtml(f.id)}">
         <div class="fc-top">
-          <span class="fc-date">${dash(f.date)}</span>
-          <span class="status-pill ${cls}">${escapeHtml(f.status || "待定")}</span>
+          <span class="fc-no ${hasNo ? "" : "empty"}">✈ ${hasNo ? escapeHtml(f.flightNo) : "—"}</span>
+          <span class="fc-right">
+            <span class="status-pill ${cls}">${escapeHtml(f.status || "待定")}</span>
+            <span class="fc-actions">
+              <button class="btn-icon" data-act="edit" title="编辑">✏️</button>
+              <button class="btn-icon" data-act="del" title="删除">🗑️</button>
+            </span>
+          </span>
+        </div>
+        <div class="fc-times">
+          <span class="fc-time ${depTxt ? "" : "pending"}">${depTxt || "待定"}</span>
+          <span class="fc-track">
+            <span class="fc-dur">${dur ? escapeHtml(dur) : "—"}</span>
+            <span class="fc-line"></span>
+          </span>
+          <span class="fc-time ${arrTxt ? "" : "pending"}">${arrTxt || "待定"}</span>
         </div>
         <div class="fc-route">${dash(f.route)}</div>
-        ${meta.length ? `<div class="fc-meta">${meta.join("")}</div>` : ""}
-        <div class="fc-foot">
-          <span>预订号 ${dash(f.bookingNo)}</span>
-          <span class="fc-actions">
-            <button class="btn-icon" data-act="edit" title="编辑">✏️</button>
-            <button class="btn-icon" data-act="del" title="删除">🗑️</button>
-          </span>
+        <div class="fc-meta">
+          <span>📅 ${dash(f.date)}</span>
+          ${f.note ? `<span class="fc-note">${escapeHtml(f.note)}</span>` : ""}
         </div>
       </div>`;
   }).join("");
@@ -535,6 +545,21 @@ function fmtDate(v) {
     return `${Number(m)}/${Number(d)} ${week}`;
   }
   return v;
+}
+
+// 计算飞行时长（"19:45"→"22:20" → "2小时35分"；跨天按 +24h 处理）
+function flightDuration(dep, arr) {
+  const toMin = (s) => {
+    const m = /^(\d{1,2}):(\d{2})$/.exec(String(s || "").trim());
+    return m ? (+m[1]) * 60 + (+m[2]) : null;
+  };
+  const a = toMin(dep), b = toMin(arr);
+  if (a === null || b === null) return "";
+  let diff = b - a;
+  if (diff < 0) diff += 24 * 60;
+  const h = Math.floor(diff / 60), m = diff % 60;
+  if (h === 0) return m + "分";
+  return m ? `${h}小时${m}分` : `${h}小时`;
 }
 
 let fxFocused = false;   // 汇率输入框聚焦中（轮询不重建）

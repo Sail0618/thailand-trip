@@ -126,14 +126,23 @@ input,select{font-family:inherit}
 .flight-card.confirmed{border-left-color:var(--ok);background:var(--ok-l)}
 .flight-card.pending{border-left-color:var(--warn);background:var(--warn-l)}
 .flight-card.cancelled{border-left-color:#B6BBB8;background:var(--gray-l);opacity:.78}
-.fc-top{display:flex;justify-content:space-between;align-items:center;gap:8px;margin-bottom:6px}
-.fc-date{font-size:.78em;color:var(--text-2);font-weight:600}
-.fc-route{font-size:.98em;font-weight:600;line-height:1.4;margin-bottom:8px;word-break:break-word}
-.fc-meta{display:flex;flex-wrap:wrap;gap:4px 14px;font-size:.8em;color:var(--text)}
-.fc-meta .m{display:inline-flex;align-items:baseline;gap:4px}
-.fc-meta .m em{font-style:normal;color:var(--text-3);font-size:.82em}
-.fc-foot{display:flex;justify-content:space-between;align-items:center;gap:8px;margin-top:10px;padding-top:9px;border-top:1px dashed var(--border-2);font-size:.75em;color:var(--text-2)}
+.fc-top{display:flex;justify-content:space-between;align-items:center;gap:8px;margin-bottom:10px}
+.fc-right{display:flex;align-items:center;gap:6px;flex-shrink:0}
 .fc-actions{display:flex;gap:2px}
+/* 航班号外显：醒目胶囊；未填写时弱化 */
+.fc-no{display:inline-flex;align-items:center;gap:5px;font-size:.84em;font-weight:700;color:var(--primary);background:var(--primary-l);border:1px solid rgba(15,118,110,.2);padding:3px 11px;border-radius:999px}
+.fc-no.empty{color:var(--text-3);background:var(--bg);border-color:var(--border-2);font-weight:600}
+/* 出发→到达：大字号时间 + 时长连线箭头（携程/去哪儿风） */
+.fc-times{display:flex;align-items:center;gap:10px;margin-bottom:2px}
+.fc-time{font-size:1.5em;font-weight:700;line-height:1.15;color:var(--text);font-variant-numeric:tabular-nums;white-space:nowrap}
+.fc-time.pending{font-size:1.05em;font-weight:600;color:var(--text-2)}
+.fc-track{flex:1;min-width:0;display:flex;flex-direction:column;align-items:center;gap:2px}
+.fc-dur{font-size:.7em;color:var(--text-3);white-space:nowrap}
+.fc-line{width:100%;height:1px;background:var(--border-2);position:relative}
+.fc-line::after{content:'';position:absolute;right:-1px;top:-3px;border:4px solid transparent;border-left:6px solid var(--text-3)}
+.fc-route{font-size:.82em;color:var(--text-2);margin-bottom:8px;word-break:break-word}
+.fc-meta{display:flex;flex-wrap:wrap;gap:4px 12px;font-size:.74em;color:var(--text-3)}
+.fc-note{color:var(--text-2)}
 .fc-empty{padding:24px 12px;text-align:center;color:var(--text-3);font-size:.86em}
 .fc-add-row{
   display:flex;align-items:center;justify-content:center;gap:6px;
@@ -222,12 +231,12 @@ input,select{font-family:inherit}
 .bill-total.balance.deficit b{color:var(--danger)}
 
 /* ============ 汇率换算 ============ */
-.fx-rate-row{display:flex;align-items:center;gap:8px;padding:11px 13px;background:var(--bg);border:1px solid var(--border);border-radius:12px;font-size:.85em}
-.fx-rate-label{font-size:.76em;color:var(--text-2);font-weight:600;flex-shrink:0}
-.fx-rate-eq{font-weight:600;color:var(--text)}
-.fx-rate-input{width:76px;padding:7px 10px;border:1.5px solid var(--border-2);border-radius:9px;font-size:16px;text-align:center;font-weight:700;color:var(--primary);background:var(--card)}
+.fx-rate-row{display:flex;align-items:center;gap:6px;padding:11px 12px;background:var(--bg);border:1px solid var(--border);border-radius:12px;font-size:.85em;flex-wrap:nowrap}
+.fx-rate-label{font-size:.76em;color:var(--text-2);font-weight:600;flex-shrink:0;white-space:nowrap}
+.fx-rate-eq{font-weight:600;color:var(--text);flex-shrink:0;white-space:nowrap}
+.fx-rate-input{width:70px;padding:7px 8px;border:1.5px solid var(--border-2);border-radius:9px;font-size:16px;text-align:center;font-weight:700;color:var(--primary);background:var(--card);flex-shrink:1;min-width:56px}
 .fx-rate-input:focus{outline:none;border-color:var(--primary);box-shadow:0 0 0 3px rgba(15,118,110,.12)}
-.fx-rate-unit{font-size:.8em;color:var(--text-2)}
+.fx-rate-unit{font-size:.8em;color:var(--text-2);flex-shrink:0;white-space:nowrap}
 .fx-refresh{width:32px;height:32px;border-radius:50%;border:1px solid var(--border-2);background:var(--card);color:var(--primary);font-size:1.05em;line-height:1;cursor:pointer;display:flex;align-items:center;justify-content:center;margin-left:auto;flex-shrink:0;transition:background .15s,transform .1s}
 .fx-refresh:hover{background:var(--primary-l)}
 .fx-refresh:active{transform:scale(.92)}
@@ -301,8 +310,9 @@ input,select{font-family:inherit}
 
   .flight-list{gap:8px}
   .flight-card{padding:12px 13px;border-radius:12px}
-  .fc-route{font-size:.94em}
-  .fc-meta{font-size:.76em;gap:4px 10px}
+  .fc-time{font-size:1.3em}
+  .fc-route{font-size:.78em}
+  .fc-meta{font-size:.72em;gap:4px 10px}
 
   /* 每日行程 */
   .day-header{padding:12px 13px}
