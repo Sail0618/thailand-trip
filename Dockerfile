@@ -14,7 +14,7 @@ RUN npm install --omit=dev
 COPY server.js ./
 COPY data ./data
 COPY public ./public
-COPY koyeb.yaml ./koyeb.yaml 2>/dev/null || true
+COPY koyeb.yaml ./
 
 # 暴露端口（koyeb 会用 PORT 环境变量覆盖）
 ENV PORT=8080

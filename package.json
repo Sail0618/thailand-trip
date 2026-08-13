@@ -4,7 +4,8 @@
   "description": "泰国11日行程 · 8人团在线共享编辑应用",
   "main": "server.js",
   "scripts": {
-    "start": "node server.js"
+    "start": "node server.js",
+    "test": "node --test test/"
   },
   "engines": {
     "node": ">=18"

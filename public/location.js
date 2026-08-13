@@ -3,6 +3,7 @@
 // - 输入名字 → 授权定位 → 定时(15s)上传位置
 // - 高德地图显示所有共享成员的位置点
 // - 每 15s 拉取一次全员位置，实时刷新
+// - 成员名字/颜色渲染前 HTML 转义（防 XSS）
 // ============================================================
 
 const AMAP_KEY = (window.AMAP_CONFIG && window.AMAP_CONFIG.key) || "AMAP_KEY_PLACEHOLDER";
@@ -12,11 +13,19 @@ let map = null;
 let markers = {};           // 高德 Marker 集合 { id: marker }
 let myId = null;            // 当前用户 id
 let myName = localStorage.getItem("trip_myname") || "";
+let myColor = null;
 let sharing = false;
 let shareInterval = null;   // 上传定时器
 let refreshInterval = null; // 拉取定时器
 let watcherId = null;       // 浏览器定位 watcher
 let lastPos = null;
+
+// HTML 转义：名字/颜色等用户可写字段插入 innerHTML 前必须经过
+function escapeHtml(v) {
+  return String(v ?? "").replace(/[&<>"']/g, (c) => ({
+    "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;"
+  }[c]));
+}
 
 // 预定义颜色（按序号分配）
 const COLORS = ["#E85D4E", "#0D7D6B", "#1976D2", "#8E24AA", "#F57C00", "#43A047", "#C2185B", "#6D4C41"];
@@ -35,7 +44,7 @@ function loadAmap() {
     }
     window._AMapSecurityConfig = { securityJsCode: AMAP_SECURITY };
     const script = document.createElement("script");
-    script.src = `https://webapi.amap.com/maps?v=2.0&key=${AMAP_KEY}`;
+    script.src = `https://webapi.amap.com/maps?v=2.0&key=${encodeURIComponent(AMAP_KEY)}`;
     script.onload = () => {
       // 等待 AMap 就绪
       if (window.AMap) resolve();
@@ -72,7 +81,7 @@ async function initMap() {
 function showMapError(msg) {
   $("map").innerHTML = `<div style="padding:40px;text-align:center;color:var(--text-l)">
     <p style="font-size:1.2em;margin-bottom:10px">🗺️ 无法加载地图</p>
-    <p style="font-size:.9em;line-height:1.8">${msg}</p>
+    <p style="font-size:.9em;line-height:1.8">${escapeHtml(msg)}</p>
     <p style="font-size:.8em;margin-top:16px;color:#888">配置方法见 public/config.js 文件</p>
   </div>`;
 }
@@ -88,7 +97,7 @@ function setMapReady(ready) {
 async function uploadPosition() {
   if (!lastPos) return;
   try {
-    await fetch("/api/locations", {
+    const res = await fetch("/api/locations", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
@@ -100,7 +109,7 @@ async function uploadPosition() {
         color: myColor
       })
     });
-    refreshMembers();
+    if (res.ok) refreshMembers();
   } catch (e) { /* 忽略 */ }
 }
 
@@ -111,6 +120,7 @@ async function refreshMembers() {
   if (!map) return;
   try {
     const res = await fetch("/api/locations", { cache: "no-store" });
+    if (!res.ok) return;
     const list = await res.json();
     renderMarkers(list);
     renderMemberList(list);
@@ -129,9 +139,9 @@ function renderMarkers(list) {
       const content = document.createElement("div");
       content.style.cssText = `
         display:flex;align-items:center;gap:4px;background:rgba(255,255,255,.95);
-        padding:3px 8px;border-radius:20px;border:2px solid ${loc.color || "#0D7D6B"};
+        padding:3px 8px;border-radius:20px;border:2px solid ${escapeHtml(loc.color) || "#0D7D6B"};
         font-size:12px;font-weight:600;color:#333;box-shadow:0 1px 4px rgba(0,0,0,.3);white-space:nowrap`;
-      content.innerHTML = `<span style="width:10px;height:10px;border-radius:50%;background:${loc.color || "#0D7D6B"};display:inline-block"></span>${loc.name}`;
+      content.innerHTML = `<span style="width:10px;height:10px;border-radius:50%;background:${escapeHtml(loc.color) || "#0D7D6B"};display:inline-block"></span>${escapeHtml(loc.name)}`;
       const marker = new AMap.Marker({ position: pos, content, offset: new AMap.Pixel(-40, -18) });
       marker.setMap(map);
       markers[loc.id] = marker;
@@ -142,7 +152,7 @@ function renderMarkers(list) {
           display:flex;align-items:center;gap:4px;background:#0D7D6B;color:#fff;
           padding:4px 10px;border-radius:20px;border:2px solid #fff;
           font-size:13px;font-weight:700;box-shadow:0 2px 8px rgba(0,0,0,.4);white-space:nowrap`;
-        myContent.innerHTML = `<span style="width:10px;height:10px;border-radius:50%;background:#fff;display:inline-block"></span>我 (${loc.name})`;
+        myContent.innerHTML = `<span style="width:10px;height:10px;border-radius:50%;background:#fff;display:inline-block"></span>我 (${escapeHtml(loc.name)})`;
         marker.setContent(myContent);
         map.setCenter(pos);
       }
@@ -168,9 +178,9 @@ function renderMemberList(list) {
     const mins = Math.round((now - (loc.updatedAt || now)) / 60000);
     const timeTxt = mins <= 1 ? "刚刚" : `${mins} 分钟前`;
     return `<div class="member-chip">
-      <span class="dot" style="background:${loc.color || "#0D7D6B"}"></span>
-      ${loc.name}${loc.id === myId ? " (我)" : ""}
-      <span class="time">${timeTxt}</span>
+      <span class="dot" style="background:${escapeHtml(loc.color) || "#0D7D6B"}"></span>
+      ${escapeHtml(loc.name)}${loc.id === myId ? " (我)" : ""}
+      <span class="time">${escapeHtml(timeTxt)}</span>
     </div>`;
   }).join("");
 }
@@ -194,7 +204,8 @@ function startSharing() {
   let h = 0;
   for (let i = 0; i < myName.length; i++) h = (h * 31 + myName.charCodeAt(i)) >>> 0;
   myColor = COLORS[h % COLORS.length];
-  myId = "user_" + myName.replace(/\s+/g, "_");
+  // 生成并持久化我的 id（刷新/换页保持同一 id，避免同名人互相覆盖位置）
+  myId = getOrCreateMyId(myName);
 
   sharing = true;
   $("btn-toggle").textContent = "■ 停止共享";
@@ -220,6 +231,16 @@ function startSharing() {
   shareInterval = setInterval(uploadPosition, 15000);
   // 定时拉取全员
   refreshInterval = setInterval(refreshMembers, 15000);
+}
+
+// 生成并持久化用户 id：优先复用已保存的；否则按名字生成唯一 id
+function getOrCreateMyId(name) {
+  const saved = localStorage.getItem("trip_myid");
+  if (saved) return saved;
+  const safe = name.replace(/\s+/g, "_").slice(0, 30);
+  const id = "user_" + safe + "_" + Math.random().toString(36).slice(2, 8);
+  localStorage.setItem("trip_myid", id);
+  return id;
 }
 
 function stopSharing() {
@@ -305,7 +326,7 @@ function waitForMapThenStart() {
     if (!map) {
       attempts++;
       if (attempts > MAX_WAIT) {
-        $("loc-status").textContent = "地图未就绪，请手动点\"开始共享位置\"";
+        $("loc-status").textContent = '地图未就绪，请手动点"开始共享位置"';
         return;
       }
       setTimeout(tryStart, 800);

@@ -155,13 +155,14 @@ const initialData = {
     { id: "t14", category: "活动", text: "Zabbelee 厨艺课（提前预约）", done: false }
   ],
 
-  // ---------- 实际账单（¥ 人民币 / ฿ 泰铢） ----------
-  // ¥ 人民币为实际录入账单；฿ 泰铢暂空（如需记录泰铢花销再填入）
-  budget: [
-    { id: "b1", item: "🏨 芭提雅 2 晚住宿", detail: "", spendCNY: 3107.28, paidCNY: 3107.28, spendTHB: 0, paidTHB: 0 },
-    { id: "b2", item: "🏨 清迈 2 晚住宿",   detail: "", spendCNY: 2850.05, paidCNY: 4075.08, spendTHB: 0, paidTHB: 0 },
-    { id: "b3", item: "⛵ 海盗船定金",       detail: "", spendCNY: 484,     paidCNY: 484,     spendTHB: 0, paidTHB: 0 }
+  // ---------- 实际账单（¥ 人民币 / ฿ 泰铢 独立两张表） ----------
+  // ¥ 与 ฿ 各自独立记录，事项/删除/新增互不影响
+  budgetCNY: [
+    { id: "bc1", item: "🏨 芭提雅 2 晚住宿", detail: "", spend: 3107.28, paid: 3107.28 },
+    { id: "bc2", item: "🏨 清迈 2 晚住宿",   detail: "", spend: 2850.05, paid: 4075.08 },
+    { id: "bc3", item: "⛵ 海盗船定金",       detail: "", spend: 484,     paid: 484     }
   ],
+  budgetTHB: [], // 泰铢账单独立表，暂空，可自行新增
 
   // 警告/冲突提示（已移除）
   alert: null,

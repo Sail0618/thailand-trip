@@ -4,6 +4,8 @@
 // - 可上下拖拽排序组件
 // - 航班/待办/预算的编辑交互
 // - 轮询实时同步（兼容 Vercel serverless）
+// - 所有用户可写字段渲染前统一 HTML 转义（防 XSS）
+// - 写操作携带 version 乐观锁，冲突(409)时自动刷新
 // ============================================================
 
 let data = null;               // 当前数据快照
@@ -11,6 +13,13 @@ let editingFlightId = null;    // 正在编辑的航班 id
 let editingBudgetId = null;    // 正在编辑的预算 id
 
 const $ = (id) => document.getElementById(id);
+
+// HTML 转义：所有用户可写字段插入 innerHTML 前必须经过此函数
+function escapeHtml(v) {
+  return String(v ?? "").replace(/[&<>"']/g, (c) => ({
+    "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;"
+  }[c]));
+}
 
 const STATUS_CLASS = { "已订": "confirmed", "待定": "pending", "已取消": "cancelled" };
 const CAT_COLOR = { "机票": "#1976D2", "船票": "#00796B", "住宿": "#F57C00", "活动": "#8E24AA", "其他": "#757575" };
@@ -68,7 +77,8 @@ function renderContent() {
   renderFlights();
   renderDays();
   renderTodos();
-  renderBudget();
+  // 预算正在编辑时不重渲染，避免轮询把用户正在输入的单元格清掉
+  if (!editingBudgetId) renderBudget();
 }
 
 // ============================================================
@@ -130,15 +140,15 @@ function renderComponents() {
               </div>
             </div>
           </div>
-          <p class="hint-note">💡 ¥ 与 ฿ 分开独立统计，互不折算。点击单元格修改金额；「实收 − 支出」为结余，负数变红表示超支。删除按钮 🗑️ 会同时删掉该事项的 ¥ 和 ฿ 记录。</p>`;
+          <p class="hint-note">💡 ¥ 与 ฿ 分开独立统计，互不折算。点击单元格修改金额；「实收 − 支出」为结余，负数变红表示超支。删除按钮 🗑️ 只删除当前币种（¥ 或 ฿）下的该条记录，两表互不影响。</p>`;
         break;
     }
 
     return `
-      <div class="section component-card" data-comp="${c.id}">
+      <div class="section component-card" data-comp="${escapeHtml(c.id)}">
         <div class="section-header ${c.color} comp-header">
           <span class="drag-handle" title="拖动排序" draggable="true">⋮⋮</span>
-          ${c.title} <span class="section-hint">${c.hint}</span>
+          ${escapeHtml(c.title)} <span class="section-hint">${escapeHtml(c.hint)}</span>
           <span class="comp-actions">
             <button class="sort-btn" data-sort="up" title="上移" aria-label="上移">↑</button>
             <button class="sort-btn" data-sort="down" title="下移" aria-label="下移">↓</button>
@@ -285,15 +295,8 @@ function setupSortButtons(container) {
 }
 
 // ============================================================
-// 位置组件 iframe 初始化（延迟加载，避免抢占主页面加载）
+// 顶部信息渲染
 // ============================================================
-function initLocationFrame() {
-  const frame = document.getElementById("loc-iframe");
-  if (frame && frame.getAttribute("data-loaded") !== "1") {
-    // iframe 已通过 src 直接加载；这里仅做懒加载优化
-  }
-}
-
 function renderMeta() {
   $("hero-title").textContent = data.meta?.title || "🇹🇭 泰国 11 日完整行程";
   $("hero-sub").textContent = data.meta?.subtitle || "";
@@ -315,14 +318,14 @@ function renderFlights() {
   if (!tbody) return;
   tbody.innerHTML = (data.flights || []).map((f) => {
     const cls = STATUS_CLASS[f.status] || "pending";
-    return `<tr class="${cls}" data-id="${f.id}">
-      <td>${f.date}</td>
-      <td class="route">${f.route}</td>
-      <td>${f.dep}</td>
-      <td>${f.arr}</td>
-      <td>${f.flightNo}</td>
-      <td>${f.bookingNo}</td>
-      <td><span class="status-pill ${cls}">${f.status}</span></td>
+    return `<tr class="${cls}" data-id="${escapeHtml(f.id)}">
+      <td>${escapeHtml(f.date)}</td>
+      <td class="route">${escapeHtml(f.route)}</td>
+      <td>${escapeHtml(f.dep)}</td>
+      <td>${escapeHtml(f.arr)}</td>
+      <td>${escapeHtml(f.flightNo)}</td>
+      <td>${escapeHtml(f.bookingNo)}</td>
+      <td><span class="status-pill ${cls}">${escapeHtml(f.status)}</span></td>
       <td>
         <button class="btn-icon" data-act="edit" title="编辑">✏️</button>
         <button class="btn-icon" data-act="del" title="删除">🗑️</button>
@@ -331,31 +334,34 @@ function renderFlights() {
   }).join("");
 }
 
+// ============================================================
+// 每日行程渲染
+// ============================================================
 function renderDays() {
   const container = $("days-container");
   if (!container) return;
   container.innerHTML = (data.days || []).map((d) => `
-    <div class="day-card" style="border-left-color:${d.color}">
-      <div class="day-header" data-day="${d.id}">
+    <div class="day-card" style="border-left-color:${escapeHtml(d.color)}">
+      <div class="day-header" data-day="${escapeHtml(d.id)}">
         <div class="left">
-          <div class="day-badge" style="background:${d.color}">
-            <span class="d">${d.date}</span><span class="m">${d.month}</span>
+          <div class="day-badge" style="background:${escapeHtml(d.color)}">
+            <span class="d">${escapeHtml(d.date)}</span><span class="m">${escapeHtml(d.month)}</span>
           </div>
           <div>
-            <div class="day-title">${d.title}</div>
-            <div class="day-sub">${d.sub} · ${d.weekday}</div>
+            <div class="day-title">${escapeHtml(d.title)}</div>
+            <div class="day-sub">${escapeHtml(d.sub)} · ${escapeHtml(d.weekday)}</div>
           </div>
         </div>
-        <span class="day-tag" style="background:${d.color}">${d.tag}</span>
+        <span class="day-tag" style="background:${escapeHtml(d.color)}">${escapeHtml(d.tag)}</span>
       </div>
-      <div class="day-body" id="day-body-${d.id}">
+      <div class="day-body" id="day-body-${escapeHtml(d.id)}">
         <div class="timeline">
           ${(d.items || []).map((it) => `
             <div class="tl-item">
-              <div class="tl-dot" style="background:${d.color}">${it.dot}</div>
-              <div class="tl-time">${it.time}</div>
-              <div class="tl-title">${it.title}</div>
-              <div class="tl-desc"><ul>${(it.desc || []).map((x) => `<li>${x}</li>`).join("")}</ul></div>
+              <div class="tl-dot" style="background:${escapeHtml(d.color)}">${escapeHtml(it.dot)}</div>
+              <div class="tl-time">${escapeHtml(it.time)}</div>
+              <div class="tl-title">${escapeHtml(it.title)}</div>
+              <div class="tl-desc"><ul>${(it.desc || []).map((x) => `<li>${escapeHtml(x)}</li>`).join("")}</ul></div>
             </div>`).join("")}
         </div>
       </div>
@@ -369,14 +375,17 @@ function renderDays() {
   });
 }
 
+// ============================================================
+// 待办渲染
+// ============================================================
 function renderTodos() {
   const container = $("todos-container");
   if (!container) return;
   container.innerHTML = `<div class="todos-list">` + (data.todos || []).map((t) => `
-    <div class="todo-item ${t.done ? "done" : ""}" data-id="${t.id}">
+    <div class="todo-item ${t.done ? "done" : ""}" data-id="${escapeHtml(t.id)}">
       <div class="checkbox">✓</div>
-      <span class="cat" style="background:${CAT_COLOR[t.category] || CAT_COLOR["其他"]}">${t.category}</span>
-      <span class="txt">${t.text}</span>
+      <span class="cat" style="background:${CAT_COLOR[t.category] || CAT_COLOR["其他"]}">${escapeHtml(t.category)}</span>
+      <span class="txt">${escapeHtml(t.text)}</span>
       <button class="btn-icon" data-act="del-todo" title="删除">🗑️</button>
     </div>`).join("") + `</div>`;
 
@@ -385,9 +394,10 @@ function renderTodos() {
       if (e.target.closest('[data-act="del-todo"]')) return;
       const id = item.dataset.id;
       const todo = data.todos.find((t) => t.id === id);
+      if (!todo) return;
       todo.done = !todo.done;
       renderTodos();
-      apiPost(`/api/todos/${id}`, { done: todo.done });
+      apiPost(`/api/todos/${id}`, { done: todo.done, version: data.version });
     });
     const delBtn = item.querySelector('[data-act="del-todo"]');
     if (delBtn) delBtn.addEventListener("click", (e) => {
@@ -397,26 +407,28 @@ function renderTodos() {
   });
 }
 
+// ============================================================
+// 预算渲染
+// ============================================================
 function renderBudget() {
   const bodyCNY = $("budget-body-cny");
   const bodyTHB = $("budget-body-thb");
   if (!bodyCNY && !bodyTHB) return;
-  const items = data.budget || [];
   const GROUP_SIZE = 8; // 8 人团
 
-  // 单货币表格渲染器
-  const renderOne = (tbody, fieldSpend, fieldPaid, sym) => {
+  // 单货币表格渲染器（¥ / ฿ 各自独立的数组，删除/新增互不影响）
+  const renderOne = (tbody, list, sym) => {
     if (!tbody) return;
-    const items_ = data.budget || [];
-    const spendTotal = items_.reduce((s,b)=>s+(Number(b[fieldSpend])||0),0);
-    const paidTotal  = items_.reduce((s,b)=>s+(Number(b[fieldPaid])||0),0);
+    const items_ = list || [];
+    const spendTotal = items_.reduce((s,b)=>s+(Number(b.spend)||0),0);
+    const paidTotal  = items_.reduce((s,b)=>s+(Number(b.paid)||0),0);
     const bal = paidTotal - spendTotal;
     const cls = bal < 0 ? "is-deficit" : "is-surplus";
     tbody.innerHTML = items_.map((b) => `
-      <tr data-id="${b.id}">
-        <td style="text-align:left;padding-left:8px">${b.item}${b.detail ? `<span style="color:var(--text-l);font-weight:400"> · ${b.detail}</span>` : ""}</td>
-        <td class="editable" data-field="${fieldSpend}" data-act="edit-budget">${fmtMoney(b[fieldSpend], sym)}</td>
-        <td class="editable" data-field="${fieldPaid}"  data-act="edit-budget">${fmtMoney(b[fieldPaid], sym)}</td>
+      <tr data-id="${escapeHtml(b.id)}">
+        <td style="text-align:left;padding-left:8px">${escapeHtml(b.item)}${b.detail ? `<span style="color:var(--text-l);font-weight:400"> · ${escapeHtml(b.detail)}</span>` : ""}</td>
+        <td class="editable" data-field="spend" data-act="edit-budget">${fmtMoney(b.spend, sym)}</td>
+        <td class="editable" data-field="paid"  data-act="edit-budget">${fmtMoney(b.paid, sym)}</td>
         <td style="padding:4px"><button class="btn-icon" data-act="del-bill" title="删除该账单">🗑️</button></td>
       </tr>`).join("") + `
       <tr class="budget-total"><td style="text-align:left;padding-left:8px">总计</td><td>${fmtMoney(spendTotal, sym)}</td><td>${fmtMoney(paidTotal, sym)}</td><td></td></tr>
@@ -424,14 +436,15 @@ function renderBudget() {
       <tr class="budget-total budget-balance ${cls}"><td style="text-align:left;padding-left:8px;font-weight:600">结余</td><td colspan="2" style="font-weight:600">${fmtMoney(bal, sym)}</td><td></td></tr>`;
   };
 
-  renderOne(bodyCNY, "spendCNY", "paidCNY", "¥");
-  renderOne(bodyTHB, "spendTHB", "paidTHB", "฿");
+  renderOne(bodyCNY, data.budgetCNY, "¥");
+  renderOne(bodyTHB, data.budgetTHB, "฿");
 
   // 绑定编辑
   document.querySelectorAll("#budget-body-cny [data-act='edit-budget'], #budget-body-thb [data-act='edit-budget']").forEach((td) => {
     td.addEventListener("click", () => {
       const id = td.closest("tr").dataset.id;
-      startBudgetEdit(id, td, td.dataset.field);
+      const type = td.closest("#budget-body-cny") ? "cny" : "thb";
+      startBudgetEdit(type, id, td, td.dataset.field);
     });
   });
 }
@@ -478,10 +491,15 @@ function closeModal() {
   $("modal-bill-overlay").style.display = "none";
 }
 
-function startBudgetEdit(id, td, field) {
+// ============================================================
+// 预算单元格编辑
+// ============================================================
+function startBudgetEdit(type, id, td, field) {
   if (editingBudgetId) return;
   editingBudgetId = id;
-  const b = data.budget.find((x) => x.id === id);
+  const list = type === "thb" ? data.budgetTHB : data.budgetCNY;
+  const b = list.find((x) => x.id === id);
+  if (!b) { editingBudgetId = null; return; }
   const oldVal = Number(b[field]) || 0;
   const input = document.createElement("input");
   input.type = "number";
@@ -497,28 +515,70 @@ function startBudgetEdit(id, td, field) {
   td.appendChild(input);
   input.focus();
   input.select();
-  const finish = () => {
-    const val = parseFloat(input.value);
-    if (!isNaN(val) && val !== oldVal) apiPost(`/api/budget/${id}`, { [field]: val });
+
+  let finished = false; // 防止 blur 与 Escape 双重触发
+  const finish = (save) => {
+    if (finished) return;
+    finished = true;
     editingBudgetId = null;
+    if (save) {
+      const val = parseFloat(input.value);
+      if (!isNaN(val) && val !== oldVal) {
+        apiPost(`/api/budget/${type}/${id}`, { [field]: val, version: data.version });
+      }
+    }
   };
-  input.addEventListener("blur", finish);
+  input.addEventListener("blur", () => finish(true));
   input.addEventListener("keydown", (e) => {
     if (e.key === "Enter") input.blur();
-    if (e.key === "Escape") { editingBudgetId = null; renderBudget(); }
+    if (e.key === "Escape") { finish(false); renderBudget(); }
   });
 }
 
 // ============================================================
-// API 辅助
+// API 辅助（携带版本乐观锁；409 时自动刷新）
 // ============================================================
 async function apiPost(url, body) {
   try {
-    await fetch(url, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
-  } catch (e) { setSync("offline", "保存失败，请重试"); }
+    const res = await fetch(url, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(body)
+    });
+    if (res.status === 409) {
+      setSync("offline", "数据已更新，正在刷新…");
+      poll();
+      return false;
+    }
+    if (!res.ok) { setSync("offline", "保存失败，请重试"); return false; }
+    const json = await res.json().catch(() => ({}));
+    if (data && typeof json.version === "number") data.version = json.version;
+    return true;
+  } catch (e) {
+    setSync("offline", "保存失败，请重试");
+    return false;
+  }
 }
+
 async function apiDelete(url) {
-  try { await fetch(url, { method: "DELETE" }); } catch (e) { setSync("offline", "删除失败"); }
+  try {
+    const version = data ? data.version : undefined;
+    const sep = url.includes("?") ? "&" : "?";
+    const full = version !== undefined ? `${url}${sep}version=${encodeURIComponent(version)}` : url;
+    const res = await fetch(full, { method: "DELETE" });
+    if (res.status === 409) {
+      setSync("offline", "数据已更新，正在刷新…");
+      poll();
+      return false;
+    }
+    if (!res.ok) { setSync("offline", "删除失败，请重试"); return false; }
+    const json = await res.json().catch(() => ({}));
+    if (data && typeof json.version === "number") data.version = json.version;
+    return true;
+  } catch (e) {
+    setSync("offline", "删除失败");
+    return false;
+  }
 }
 
 // ============================================================
@@ -532,8 +592,8 @@ async function poll() {
     const res = await fetch("/api/data", { cache: "no-store" });
     if (!res.ok) throw new Error("加载失败");
     const fresh = await res.json();
-    const freshKey = JSON.stringify(fresh.lastUpdated) + fresh.flights?.length;
-    const curKey = JSON.stringify(data?.lastUpdated) + data?.flights?.length;
+    const freshKey = JSON.stringify(fresh.lastUpdated) + "|" + (fresh.version || 0) + "|" + fresh.flights?.length;
+    const curKey = JSON.stringify(data?.lastUpdated) + "|" + (data?.version || 0) + "|" + data?.flights?.length;
     if (!data || freshKey !== curKey) {
       // 只更新内容，不重建骨架 → iframe 位置组件不闪烁、拖拽顺序不丢
       data = fresh;
@@ -561,7 +621,7 @@ function setSync(state, text) {
 // 事件绑定
 // ============================================================
 document.addEventListener("DOMContentLoaded", () => {
-  // 航班行操作（委托）
+  // 航班行操作（委托）：点击任意单元格打开编辑弹窗
   document.addEventListener("click", (e) => {
     const editRow = e.target.closest("#flight-body tr");
     if (editRow) {
@@ -570,7 +630,7 @@ document.addEventListener("DOMContentLoaded", () => {
       if (actBtn) {
         if (actBtn.dataset.act === "edit") openFlightModal(id);
         if (actBtn.dataset.act === "del" && confirm("删除这段航班？")) apiDelete(`/api/flights/${id}`);
-      } else if (e.target.closest(".route")) {
+      } else if (e.target.closest("td")) {
         openFlightModal(id);
       }
     }
@@ -582,10 +642,11 @@ document.addEventListener("DOMContentLoaded", () => {
     const body = {
       date: $("f-date").value, route: $("f-route").value, dep: $("f-dep").value,
       arr: $("f-arr").value, flightNo: $("f-flightNo").value,
-      bookingNo: $("f-bookingNo").value, status: $("f-status").value, note: $("f-note").value
+      bookingNo: $("f-bookingNo").value, status: $("f-status").value, note: $("f-note").value,
+      version: data ? data.version : undefined
     };
     if (editingFlightId) apiPost(`/api/flights/${editingFlightId}`, body);
-    else fetch("/api/flights", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
+    else apiPost("/api/flights", body);
     closeModal();
   });
   $("btn-del-flight").addEventListener("click", () => {
@@ -601,7 +662,7 @@ document.addEventListener("DOMContentLoaded", () => {
     const text = $("t-text").value.trim();
     const category = $("t-category").value;
     if (!text) return;
-    fetch("/api/todos", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ text, category }) });
+    apiPost("/api/todos", { text, category, version: data ? data.version : undefined });
     closeModal();
   });
 
@@ -613,33 +674,38 @@ document.addEventListener("DOMContentLoaded", () => {
   $("btn-add-bill").addEventListener("click", () => {
     $("b-item").value = "";
     $("b-detail").value = "";
-    $("b-spendCNY").value = 0;
-    $("b-paidCNY").value = 0;
-    $("b-spendTHB").value = 0;
-    $("b-paidTHB").value = 0;
+    $("b-spend").value = 0;
+    $("b-paid").value = 0;
     $("modal-bill-overlay").style.display = "flex";
+  });
+  // 币种切换时更新支出/实收标签的颜色
+  $("b-type").addEventListener("change", () => {
+    const isTHB = $("b-type").value === "thb";
+    $("b-spend-label").style.color = isTHB ? "#5D4037" : "#2E7D32";
+    $("b-paid-label").style.color = isTHB ? "#5D4037" : "#2E7D32";
   });
   $("btn-cancel-bill").addEventListener("click", closeModal);
   $("btn-save-bill").addEventListener("click", () => {
     const item = $("b-item").value.trim() || "新账单";
+    const type = $("b-type").value === "thb" ? "thb" : "cny";
     const body = {
       item,
       detail: $("b-detail").value.trim(),
-      spendCNY: Number($("b-spendCNY").value) || 0,
-      paidCNY:  Number($("b-paidCNY").value)  || 0,
-      spendTHB: Number($("b-spendTHB").value) || 0,
-      paidTHB:  Number($("b-paidTHB").value)  || 0
+      spend: Number($("b-spend").value) || 0,
+      paid:  Number($("b-paid").value)  || 0,
+      version: data ? data.version : undefined
     };
-    fetch("/api/budget", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
+    apiPost(`/api/budget/${type}`, body);
     closeModal();
   });
 
-  // 删除账单按钮（委托）
+  // 删除账单按钮（委托，按所在表判断币种）
   document.addEventListener("click", (e) => {
     const delBtn = e.target.closest('[data-act="del-bill"]');
     if (delBtn) {
       const tr = delBtn.closest("tr");
-      if (tr && confirm("删除该账单？")) apiDelete(`/api/budget/${tr.dataset.id}`);
+      const type = delBtn.closest("#budget-body-cny") ? "cny" : "thb";
+      if (tr && confirm("删除该账单？")) apiDelete(`/api/budget/${type}/${tr.dataset.id}`);
     }
   });
 

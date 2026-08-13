@@ -85,26 +85,23 @@
   <div class="modal">
     <div class="modal-header">新增账单</div>
     <div class="modal-body">
+      <label>币种</label>
+      <select id="b-type">
+        <option value="cny">¥ 人民币</option>
+        <option value="thb">฿ 泰铢</option>
+      </select>
       <label>事项名称</label>
       <input type="text" id="b-item" placeholder="例如：曼谷2晚住宿">
       <label>备注（可选）</label>
       <input type="text" id="b-detail" placeholder="例如：Agoda订单号xxx">
       <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-top:10px">
         <div>
-          <label style="color:#2E7D32">¥ 支出</label>
-          <input type="number" step="0.01" id="b-spendCNY" value="0">
+          <label id="b-spend-label">支出</label>
+          <input type="number" step="0.01" id="b-spend" value="0">
         </div>
         <div>
-          <label style="color:#2E7D32">¥ 实收</label>
-          <input type="number" step="0.01" id="b-paidCNY" value="0">
-        </div>
-        <div>
-          <label style="color:#5D4037">฿ 支出</label>
-          <input type="number" step="0.01" id="b-spendTHB" value="0">
-        </div>
-        <div>
-          <label style="color:#5D4037">฿ 实收</label>
-          <input type="number" step="0.01" id="b-paidTHB" value="0">
+          <label id="b-paid-label">实收</label>
+          <input type="number" step="0.01" id="b-paid" value="0">
         </div>
       </div>
     </div>
