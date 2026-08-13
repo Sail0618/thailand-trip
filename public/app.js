@@ -77,10 +77,9 @@ function renderAll() {
 function renderContent() {
   renderFlights();
   renderDays();
-  renderTodos();
-  // 预算正在编辑时不重渲染，避免轮询把用户正在输入的单元格清掉
+  // 各编辑中的控件不重渲染，避免轮询打断输入
+  if (!editingTodoDateId) renderTodos();
   if (!editingBudgetId) renderBudget();
-  // 汇率输入中同理
   if (!fxFocused) renderFx();
 }
 
@@ -406,14 +405,20 @@ function renderTodos() {
   container.innerHTML = `<div class="todos-list">` + (data.todos || []).map((t) => `
     <div class="todo-item ${t.done ? "done" : ""}" data-id="${escapeHtml(t.id)}">
       <div class="checkbox">✓</div>
-      <span class="cat" style="background:${CAT_COLOR[t.category] || CAT_COLOR["其他"]}">${escapeHtml(t.category)}</span>
-      <span class="txt">${escapeHtml(t.text)}</span>
+      <div class="todo-main">
+        <div class="txt">${escapeHtml(t.text)}</div>
+        <div class="todo-meta">
+          <span class="cat" style="background:${CAT_COLOR[t.category] || CAT_COLOR["其他"]}">${escapeHtml(t.category)}</span>
+          <span class="todo-date" data-edit-date title="点击设置日期">${t.date ? escapeHtml(fmtDate(t.date)) : "＋日期"}</span>
+        </div>
+      </div>
       <button class="btn-icon" data-act="del-todo" title="删除">🗑️</button>
     </div>`).join("") + `</div>`;
 
   container.querySelectorAll(".todo-item").forEach((item) => {
     item.addEventListener("click", (e) => {
       if (e.target.closest('[data-act="del-todo"]')) return;
+      if (e.target.closest('[data-edit-date]')) return; // 日期点击单独处理
       const id = item.dataset.id;
       const todo = data.todos.find((t) => t.id === id);
       if (!todo) return;
@@ -426,6 +431,43 @@ function renderTodos() {
       e.stopPropagation();
       if (confirm("删除这条待办？")) apiDelete(`/api/todos/${item.dataset.id}`);
     });
+    const dateEl = item.querySelector('[data-edit-date]');
+    if (dateEl) dateEl.addEventListener("click", (e) => {
+      e.stopPropagation();
+      startTodoDateEdit(item.dataset.id, dateEl);
+    });
+  });
+}
+
+// 独立编辑待办日期（原生日期选择器）
+function startTodoDateEdit(id, el) {
+  if (editingTodoDateId) return;
+  const todo = data.todos.find((t) => t.id === id);
+  if (!todo) return;
+  editingTodoDateId = id;
+  const input = document.createElement("input");
+  input.type = "date";
+  input.className = "todo-date-input";
+  if (todo.date && /^\d{4}-\d{2}-\d{2}$/.test(todo.date)) input.value = todo.date;
+  el.textContent = "";
+  el.appendChild(input);
+  el.classList.add("editing");
+  input.focus();
+
+  const done = (val) => {
+    if (editingTodoDateId !== id) return;
+    editingTodoDateId = null;
+    if (val !== (todo.date || "")) {
+      apiPost(`/api/todos/${id}`, { date: val, version: data.version }).then((ok) => {
+        if (ok) { todo.date = val; renderTodos(); }
+      });
+    } else {
+      renderTodos();
+    }
+  };
+  input.addEventListener("change", () => done(input.value));
+  input.addEventListener("blur", () => {
+    if (editingTodoDateId === id) { editingTodoDateId = null; renderTodos(); }
   });
 }
 
@@ -490,6 +532,19 @@ function renderBudget() {
 // ============================================================
 // 汇率换算（¥ ⇄ ฿）
 // ============================================================
+let editingTodoDateId = null; // 待办日期输入中（轮询不重建）
+
+// 日期显示：ISO → "9/30 周三"
+function fmtDate(v) {
+  if (!v) return "";
+  if (/^\d{4}-\d{2}-\d{2}$/.test(v)) {
+    const [y, m, d] = v.split("-");
+    const week = ["周日","周一","周二","周三","周四","周五","周六"][new Date(y, m - 1, d).getDay()];
+    return `${Number(m)}/${Number(d)} ${week}`;
+  }
+  return v;
+}
+
 let fxFocused = false;   // 汇率输入框聚焦中（轮询不重建）
 let fxCny = "";          // 保留输入值，避免轮询重渲染清空
 let fxThb = "";
@@ -799,6 +854,7 @@ document.addEventListener("DOMContentLoaded", () => {
     if (addBtn.id === "btn-add-flight") openNewFlightModal();
     else if (addBtn.id === "btn-add-todo") {
       $("t-text").value = "";
+      $("t-date").value = "";
       $("modal-todo-overlay").style.display = "flex";
     } else if (addBtn.id === "btn-add-bill") {
       $("b-item").value = "";
@@ -829,8 +885,9 @@ document.addEventListener("DOMContentLoaded", () => {
   $("btn-save-todo").addEventListener("click", () => {
     const text = $("t-text").value.trim();
     const category = $("t-category").value;
+    const date = $("t-date").value;
     if (!text) return;
-    apiPost("/api/todos", { text, category, version: data ? data.version : undefined });
+    apiPost("/api/todos", { text, category, date, version: data ? data.version : undefined });
     closeModal();
   });
 

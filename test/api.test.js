@@ -86,6 +86,17 @@ describe("泰国行程 API", () => {
     assert.ok(after.json.todos.some((t) => t.id === post.json.id));
   });
 
+  it("待办日期独立更新，不影响文本", async () => {
+    const before = await api("GET", "/api/data");
+    const todo = before.json.todos[0];
+    const post = await api("POST", `/api/todos/${todo.id}`, { date: "2026-09-30", version: before.json.version });
+    assert.equal(post.status, 200);
+    const after = await api("GET", "/api/data");
+    const updated = after.json.todos.find((t) => t.id === todo.id);
+    assert.equal(updated.date, "2026-09-30");
+    assert.equal(updated.text, todo.text); // 不影响原文本
+  });
+
   it("版本冲突返回 409，不静默覆盖", async () => {
     const before = await api("GET", "/api/data");
     const staleVersion = before.json.version;

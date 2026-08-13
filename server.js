@@ -196,7 +196,7 @@ function normalize(data) {
   data = data || {};
   data.flights = Array.isArray(data.flights) ? data.flights : [];
   data.days = Array.isArray(data.days) ? data.days : [];
-  data.todos = Array.isArray(data.todos) ? data.todos : [];
+  data.todos = (Array.isArray(data.todos) ? data.todos : []).map((t) => ({ date: t.date || "", ...t }));
   data.locations = Array.isArray(data.locations) ? data.locations : [];
   data.meta = data.meta || clone(initialData.meta);
   const fx = Number(data.fxRate);
@@ -400,10 +400,11 @@ app.post("/api/todos/:id", route(async (req, res) => {
   assertVersion(current, expectedVersion(req));
   const idx = current.todos.findIndex((t) => t.id === req.params.id);
   if (idx === -1) return res.status(404).json({ error: "待办不存在" });
-  const patch = pickPatch(req.body, ["done", "text", "category"]);
+  const patch = pickPatch(req.body, ["done", "text", "category", "date"]);
   if ("done" in patch) patch.done = !!patch.done;
   if ("text" in patch) patch.text = cleanStr(patch.text, 500);
   if ("category" in patch) patch.category = cleanStr(patch.category, 50) || "其他";
+  if ("date" in patch) patch.date = cleanStr(patch.date, 20);
   current.todos[idx] = { ...current.todos[idx], ...patch };
   const saved = await commit(current);
   res.json({ ok: true, version: saved.version });
@@ -417,6 +418,7 @@ app.post("/api/todos", route(async (req, res) => {
     id: "t" + Date.now().toString(36) + Math.random().toString(36).slice(2, 6),
     category: cleanStr(body.category, 50) || "其他",
     text: cleanStr(body.text, 500) || "新待办",
+    date: cleanStr(body.date, 20),
     done: false
   };
   current.todos.push(todo);

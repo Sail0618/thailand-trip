@@ -137,22 +137,22 @@ const initialData = {
     }
   ],
 
-  // ---------- 待办事项（可在线勾选） ----------
+  // ---------- 待办事项（可在线勾选；日期为独立字段，可单独修改） ----------
   todos: [
-    { id: "t1", category: "机票", text: "9/30 清迈→曼谷 订票（建议18-22点）", done: false },
-    { id: "t2", category: "机票", text: "10/1 曼谷→甲米 订票（建议早班机）", done: false },
-    { id: "t3", category: "船票", text: "10/1 甲米→皮皮岛 船票+接送", done: false },
-    { id: "t4", category: "船票", text: "10/2 海盗船（务必提前订）", done: false },
-    { id: "t5", category: "船票", text: "10/3 皮皮岛→甲米 返程船票", done: false },
-    { id: "t6", category: "住宿", text: "曼谷 9/25-26（2晚）", done: false },
-    { id: "t7", category: "住宿", text: "芭提雅 Suksabai Villa 9/26-28", done: false },
-    { id: "t8", category: "住宿", text: "清迈 52 Bann Sao Hin 9/28-30", done: false },
-    { id: "t9", category: "住宿", text: "曼谷机场酒店 9/30 & 10/3", done: false },
-    { id: "t10", category: "住宿", text: "皮皮岛酒店 10/1-3（2晚）", done: false },
-    { id: "t11", category: "活动", text: "海天盛筵男模餐厅（线上购票）", done: false },
-    { id: "t12", category: "活动", text: "99 Show Pattaya（线上购票）", done: false },
-    { id: "t13", category: "活动", text: "Doodoi 大象营（提前预约）", done: false },
-    { id: "t14", category: "活动", text: "Zabbelee 厨艺课（提前预约）", done: false }
+    { id: "t1", category: "机票", text: "清迈→曼谷 订票（建议18-22点）", date: "2026-09-30", done: false },
+    { id: "t2", category: "机票", text: "曼谷→甲米 订票（建议早班机）", date: "2026-10-01", done: false },
+    { id: "t3", category: "船票", text: "甲米→皮皮岛 船票+接送", date: "2026-10-01", done: false },
+    { id: "t4", category: "船票", text: "海盗船（务必提前订）", date: "2026-10-02", done: false },
+    { id: "t5", category: "船票", text: "皮皮岛→甲米 返程船票", date: "2026-10-03", done: false },
+    { id: "t6", category: "住宿", text: "曼谷 2晚", date: "9/25-26", done: false },
+    { id: "t7", category: "住宿", text: "芭提雅 Suksabai Villa", date: "9/26-28", done: false },
+    { id: "t8", category: "住宿", text: "清迈 52 Bann Sao Hin", date: "9/28-30", done: false },
+    { id: "t9", category: "住宿", text: "曼谷机场酒店", date: "9/30 & 10/3", done: false },
+    { id: "t10", category: "住宿", text: "皮皮岛酒店 2晚", date: "10/1-3", done: false },
+    { id: "t11", category: "活动", text: "海天盛筵男模餐厅（线上购票）", date: "", done: false },
+    { id: "t12", category: "活动", text: "99 Show Pattaya（线上购票）", date: "", done: false },
+    { id: "t13", category: "活动", text: "Doodoi 大象营（提前预约）", date: "", done: false },
+    { id: "t14", category: "活动", text: "Zabbelee 厨艺课（提前预约）", date: "", done: false }
   ],
 
   // ---------- 实际账单（¥ 人民币 / ฿ 泰铢 独立两张表） ----------
