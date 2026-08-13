@@ -431,7 +431,11 @@ function renderTodos() {
     const delBtn = item.querySelector('[data-act="del-todo"]');
     if (delBtn) delBtn.addEventListener("click", (e) => {
       e.stopPropagation();
-      if (confirm("删除这条待办？")) apiDelete(`/api/todos/${item.dataset.id}`);
+      if (confirm("删除这条待办？")) {
+        data.todos = data.todos.filter((t) => t.id !== item.dataset.id);
+        renderTodos();
+        apiDelete(`/api/todos/${item.dataset.id}`);
+      }
     });
     const dateEl = item.querySelector('[data-edit-date]');
     if (dateEl) dateEl.addEventListener("click", (e) => {
@@ -460,9 +464,9 @@ function startTodoDateEdit(id, el) {
     if (editingTodoDateId !== id) return;
     editingTodoDateId = null;
     if (val !== (todo.date || "")) {
-      apiPost(`/api/todos/${id}`, { date: val, version: data.version }).then((ok) => {
-        if (ok) { todo.date = val; renderTodos(); }
-      });
+      todo.date = val;
+      renderTodos();
+      apiPost(`/api/todos/${id}`, { date: val, version: data.version });
     } else {
       renderTodos();
     }
@@ -560,6 +564,11 @@ function flightDuration(dep, arr) {
   const h = Math.floor(diff / 60), m = diff % 60;
   if (h === 0) return m + "分";
   return m ? `${h}小时${m}分` : `${h}小时`;
+}
+
+// 生成与后端一致的 id（前缀 + 时间戳36进制 + 随机）
+function genId(prefix) {
+  return prefix + Date.now().toString(36) + Math.random().toString(36).slice(2, 6);
 }
 
 let fxFocused = false;   // 汇率输入框聚焦中（轮询不重建）
@@ -752,8 +761,10 @@ function startBudgetEdit(type, id, td, field) {
     if (save) {
       const val = parseFloat(input.value);
       if (!isNaN(val) && val !== oldVal) {
-        apiPost(`/api/budget/${type}/${id}`, { [field]: val, version: data.version })
-          .then((ok) => { if (ok) renderBudget(); });
+        const b = list.find((x) => x.id === id);
+        if (b) b[field] = val;
+        renderBudget();
+        apiPost(`/api/budget/${type}/${id}`, { [field]: val, version: data.version });
       }
     }
   };
@@ -866,7 +877,11 @@ document.addEventListener("DOMContentLoaded", () => {
       const actBtn = e.target.closest("[data-act]");
       if (actBtn) {
         if (actBtn.dataset.act === "edit") openFlightModal(id);
-        if (actBtn.dataset.act === "del" && confirm("删除这段航班？")) apiDelete(`/api/flights/${id}`);
+        if (actBtn.dataset.act === "del" && confirm("删除这段航班？")) {
+          data.flights = data.flights.filter((f) => f.id !== id);
+          renderFlights();
+          apiDelete(`/api/flights/${id}`);
+        }
       } else {
         openFlightModal(id);
       }
@@ -899,12 +914,26 @@ document.addEventListener("DOMContentLoaded", () => {
       bookingNo: $("f-bookingNo").value, status: $("f-status").value, note: $("f-note").value,
       version: data ? data.version : undefined
     };
-    if (editingFlightId) apiPost(`/api/flights/${editingFlightId}`, body);
-    else apiPost("/api/flights", body);
+    // 乐观更新：立即回显，不等服务端/轮询
+    if (editingFlightId) {
+      const f = data.flights.find((x) => x.id === editingFlightId);
+      if (f) Object.assign(f, { date: body.date, route: body.route, dep: body.dep, arr: body.arr, flightNo: body.flightNo, bookingNo: body.bookingNo, status: body.status, note: body.note });
+      renderFlights();
+      apiPost(`/api/flights/${editingFlightId}`, body);
+    } else {
+      data.flights.push({ id: genId("f"), date: body.date, route: body.route, dep: body.dep, arr: body.arr, flightNo: body.flightNo, bookingNo: body.bookingNo, status: body.status, note: body.note });
+      renderFlights();
+      apiPost("/api/flights", body);
+    }
     closeModal();
   });
   $("btn-del-flight").addEventListener("click", () => {
-    if (editingFlightId && confirm("删除这段航班？")) { apiDelete(`/api/flights/${editingFlightId}`); closeModal(); }
+    if (editingFlightId && confirm("删除这段航班？")) {
+      data.flights = data.flights.filter((f) => f.id !== editingFlightId);
+      renderFlights();
+      apiDelete(`/api/flights/${editingFlightId}`);
+      closeModal();
+    }
   });
 
   $("btn-cancel-todo").addEventListener("click", closeModal);
@@ -913,6 +942,8 @@ document.addEventListener("DOMContentLoaded", () => {
     const category = $("t-category").value;
     const date = $("t-date").value;
     if (!text) return;
+    data.todos.push({ id: genId("t"), category, text, date, done: false });
+    renderTodos();
     apiPost("/api/todos", { text, category, date, version: data ? data.version : undefined });
     closeModal();
   });
@@ -931,14 +962,13 @@ document.addEventListener("DOMContentLoaded", () => {
   $("btn-save-bill").addEventListener("click", () => {
     const item = $("b-item").value.trim() || "新账单";
     const type = $("b-type").value === "thb" ? "thb" : "cny";
-    const body = {
-      item,
-      detail: $("b-detail").value.trim(),
-      spend: Number($("b-spend").value) || 0,
-      paid:  Number($("b-paid").value)  || 0,
-      version: data ? data.version : undefined
-    };
-    apiPost(`/api/budget/${type}`, body);
+    const detail = $("b-detail").value.trim();
+    const spend = Number($("b-spend").value) || 0;
+    const paid =  Number($("b-paid").value)  || 0;
+    const list = type === "thb" ? data.budgetTHB : data.budgetCNY;
+    list.push({ id: genId(type === "thb" ? "bt" : "bc"), item, detail, spend, paid });
+    renderBudget();
+    apiPost(`/api/budget/${type}`, { item, detail, spend, paid, version: data ? data.version : undefined });
     closeModal();
   });
 
@@ -948,7 +978,13 @@ document.addEventListener("DOMContentLoaded", () => {
     if (delBtn) {
       const row = delBtn.closest(".bill-row");
       const type = delBtn.closest(".budget-panel.cny") ? "cny" : "thb";
-      if (row && confirm("删除该账单？")) apiDelete(`/api/budget/${type}/${row.dataset.id}`);
+      if (row && confirm("删除该账单？")) {
+        const list = type === "thb" ? data.budgetTHB : data.budgetCNY;
+        const idx = list.findIndex((b) => b.id === row.dataset.id);
+        if (idx >= 0) list.splice(idx, 1);
+        renderBudget();
+        apiDelete(`/api/budget/${type}/${row.dataset.id}`);
+      }
     }
   });
 

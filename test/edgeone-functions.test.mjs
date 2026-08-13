@@ -1,0 +1,168 @@
+// ============================================================
+// EdgeOne Pages Functions 逻辑测试（node:test，不依赖外部网络）
+// 运行：npm test
+// ============================================================
+import { describe, it, before, after } from "node:test";
+import assert from "node:assert/strict";
+import { onRequest } from "../functions/api/core.mjs";
+
+// 内存 KV 模拟器（模拟 EdgeOne KV 的 get/put）
+class MockKV {
+  constructor(seed = {}) {
+    this.map = new Map(Object.entries(seed));
+  }
+  async get(key) {
+    return this.map.has(key) ? this.map.get(key) : null;
+  }
+  async put(key, value) {
+    this.map.set(key, value);
+  }
+}
+
+const originalFetch = globalThis.fetch;
+let kv;
+
+async function api(method, path, body, env) {
+  const req = new Request("http://localhost" + path, {
+    method,
+    headers: body !== undefined ? { "Content-Type": "application/json" } : {},
+    body: body !== undefined ? JSON.stringify(body) : undefined
+  });
+  const res = await onRequest({ request: req, env: { THAILAND_KV: kv, ...(env || {}) } });
+  let json = null;
+  try { json = await res.json(); } catch (e) { /* ignore */ }
+  return { status: res.status, json };
+}
+
+describe("EdgeOne Pages Functions", () => {
+  before(() => {
+    // mock 汇率接口：1 CNY = 5 THB
+    globalThis.fetch = async (url, opts) => {
+      if (String(url).includes("open.er-api.com")) {
+        return new Response(JSON.stringify({
+          provider: "mock", rates: { THB: 5 }
+        }), { status: 200, headers: { "Content-Type": "application/json" } });
+      }
+      return new Response(JSON.stringify({ error: "mock 404" }), { status: 404 });
+    };
+  });
+
+  after(() => {
+    globalThis.fetch = originalFetch;
+  });
+
+  it("KV 为空时返回初始数据（8 段航班 + 默认汇率）", async () => {
+    kv = new MockKV();
+    const { status, json } = await api("GET", "/api/data");
+    assert.equal(status, 200);
+    assert.equal(json.flights.length, 8);
+    assert.ok(json.version >= 0);
+    assert.ok(json.fxRate > 0);
+  });
+
+  it("写入后 version +1，乐观锁校验（版本不匹配返回 409）", async () => {
+    kv = new MockKV();
+    const first = await api("GET", "/api/data");
+    const v0 = first.json.version;
+
+    const put = await api("PUT", "/api/data", { version: v0, ...first.json });
+    assert.equal(put.status, 200);
+    assert.equal(put.json.version, v0 + 1);
+
+    const conflict = await api("PUT", "/api/data", { version: v0, ...first.json });
+    assert.equal(conflict.status, 409);
+  });
+
+  it("新增/更新/删除待办", async () => {
+    kv = new MockKV();
+    const created = await api("POST", "/api/todos", { text: "测试待办", category: "活动", date: "10/1" });
+    assert.equal(created.status, 200);
+    assert.ok(created.json.id);
+
+    const id = created.json.id;
+    const { json: list } = await api("GET", "/api/todos");
+    assert.equal(list.length, 15); // 初始 14 条 + 新增 1 条
+    assert.ok(list.some((t) => t.text === "测试待办"));
+
+    const updated = await api("POST", `/api/todos/${id}`, { done: true, version: created.json.version });
+    assert.equal(updated.status, 200);
+    const { json: list2 } = await api("GET", "/api/todos");
+    assert.equal(list2.find((t) => t.id === id).done, true);
+
+    const del = await api("DELETE", `/api/todos/${id}`, undefined, undefined);
+    assert.equal(del.status, 200);
+    const { json: list3 } = await api("GET", "/api/todos");
+    assert.equal(list3.length, 14); // 回到初始 14 条
+  });
+
+  it("预算：新增 ¥ 项并查询，删除 ฿ 项", async () => {
+    kv = new MockKV();
+    const add = await api("POST", "/api/budget/cny", { item: "🍜 吃饭", spend: 100, paid: 100 });
+    assert.equal(add.status, 200);
+    const { json: cny } = await api("GET", "/api/budget/cny");
+    assert.equal(cny.length, 4); // 初始 3 条 + 新增 1 条
+    assert.ok(cny.some((b) => b.item === "🍜 吃饭"));
+
+    const del = await api("DELETE", `/api/budget/thb/${add.json.id}`);
+    assert.equal(del.status, 200); // thb 表没有该项也能删
+  });
+
+  it("航班：更新 flightNo / 状态", async () => {
+    kv = new MockKV();
+    const data = await api("GET", "/api/data");
+    const f1 = data.json.flights.find((f) => f.id === "f1");
+    const upd = await api("POST", "/api/flights/f1", {
+      version: data.json.version,
+      flightNo: "CX963",
+      status: "已订",
+      date: f1.date,
+      route: f1.route,
+      dep: f1.dep,
+      arr: f1.arr,
+      bookingNo: f1.bookingNo,
+      note: f1.note
+    });
+    assert.equal(upd.status, 200);
+    const { json: flights } = await api("GET", "/api/flights");
+    assert.equal(flights.find((f) => f.id === "f1").flightNo, "CX963");
+  });
+
+  it("汇率：手动设置 + 实时抓取（mock）", async () => {
+    kv = new MockKV();
+    const data = await api("GET", "/api/data");
+    const set = await api("POST", "/api/fx", { version: data.json.version, rate: 4.8 });
+    assert.equal(set.status, 200);
+
+    const live = await api("GET", "/api/fx/live");
+    assert.equal(live.status, 200);
+    assert.equal(live.json.rate, 5);
+
+    const refresh = await api("POST", "/api/fx/refresh", { version: set.json.version });
+    assert.equal(refresh.status, 200);
+    assert.equal(refresh.json.rate, 5);
+  });
+
+  it("位置共享：上报 → 查询 → 删除", async () => {
+    kv = new MockKV();
+    const post = await api("POST", "/api/locations", { name: "小明", lat: 13.7, lng: 100.5 });
+    assert.equal(post.status, 200);
+    const { json: list } = await api("GET", "/api/locations");
+    assert.equal(list.length, 1);
+    assert.equal(list[0].name, "小明");
+    const del = await api("DELETE", `/api/locations/${post.json.id}`);
+    assert.equal(del.status, 200);
+    const { json: list2 } = await api("GET", "/api/locations");
+    assert.equal(list2.length, 0);
+  });
+
+  it("健康检查与未知接口", async () => {
+    kv = new MockKV();
+    const health = await api("GET", "/api/health");
+    assert.equal(health.status, 200);
+    assert.equal(health.json.ok, true);
+    assert.equal(health.json.storage, "edgeone-kv");
+
+    const nf = await api("GET", "/api/nope");
+    assert.equal(nf.status, 404);
+  });
+});

@@ -151,6 +151,26 @@ async function localLoad() {
 async function localSave(data) {
   try {
     await fsp.mkdir(path.dirname(LOCAL_STORE_FILE), { recursive: true });
+    // 保存前自动备份旧文件到 data/backups/（保留最近 10 份，防止误删/损坏丢数据）
+    if (process.env.DISABLE_BACKUP !== "1") {
+      try {
+        const exists = await fsp.access(LOCAL_STORE_FILE).then(() => true).catch(() => false);
+        if (exists) {
+          const bakDir = path.join(path.dirname(LOCAL_STORE_FILE), "backups");
+          await fsp.mkdir(bakDir, { recursive: true });
+          const stamp = new Date().toISOString().replace(/[:.]/g, "-");
+          const bakFile = path.join(bakDir, "store-" + stamp + ".json");
+          await fsp.copyFile(LOCAL_STORE_FILE, bakFile);
+          const files = (await fsp.readdir(bakDir))
+            .filter((f) => f.startsWith("store-") && f.endsWith(".json"))
+            .sort();
+          while (files.length > 10) {
+            const old = files.shift();
+            await fsp.unlink(path.join(bakDir, old)).catch(() => {});
+          }
+        }
+      } catch (e) { /* 备份失败不影响主流程 */ }
+    }
     await fsp.writeFile(LOCAL_STORE_FILE, JSON.stringify(data, null, 2), "utf8");
   } catch (e) {
     if (process.env.VERCEL) {

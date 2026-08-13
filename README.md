@@ -74,11 +74,44 @@ node server.js
 
 已内置 `vercel.json` 适配。注意：Vercel 文件系统只读，**必须配置 `JSONBIN_API_KEY`**，否则保存会报错。
 
+
+### 5. 部署到腾讯云 EdgeOne Pages（国内可访问 · 免费 · 推荐国内使用）
+
+> 海外平台（Koyeb / Render / Vercel）的默认域名在国内基本被墙。EdgeOne Pages 是腾讯云的国内节点托管，
+> **免费版长期有效**：边缘函数 300 万次/月、KV 存储 1GB，无需备案、无需购买域名，直接用平台二级域名即可访问。
+> 本项目已内置完整适配（`functions/` + `edgeone.json`），前端零改动。
+
+1. **注册腾讯云**：打开 https://cloud.tencent.com 注册账号（免费，需实名认证）
+2. **开通 EdgeOne Makers（Pages）**：在控制台搜索「EdgeOne Makers」或「边缘安全加速平台」，一键开通免费版
+3. **创建 KV 命名空间**：控制台 → KV 存储 → 创建命名空间（如 `thailand-data`）
+4. **导入仓库部署**：
+   - EdgeOne Pages 控制台 → 创建项目 → 导入本 GitHub 仓库
+   - 构建设置读取 `edgeone.json` 自动完成（输出目录 `public`）
+5. **绑定 KV**：项目详情 → KV 存储 → 绑定命名空间，**变量名填 `THAILAND_KV`**（代码里固定用这个名字）
+6. **（可选）迁移现有 JSONBin 数据**：项目设置 → 环境变量添加：
+   - `JSONBIN_BIN_ID` = 当前 bin ID（如 `6a7becd3da38895dfed8c291`）
+   - `JSONBIN_API_KEY` = 你的 Master Key
+   - 首次读取时若 KV 为空会自动从 JSONBin 一次性迁移，之后以 KV 为准；迁移完成后可移除这两个变量并撤销该 Key
+7. **部署完成后**：控制台会给一个 `https://xxx.edgeone.app` 之类的地址，**国内直接打开即可**，把链接发给朋友
+
+验证：浏览器打开 `https://你的地址/api/health`，应返回 `{"ok":true,"storage":"edgeone-kv",...}`。
+
+> 数据存在 EdgeOne KV（免费 1GB），8 人团完全够用；接口与前端全部同源，无需 CORS。
+> 汇率换算仍自动从 open.er-api.com 抓取（失败时降级用缓存值）。
+
 ## 📁 项目结构
 
 ```
 thailand-trip/
 ├── server.js           # Express 后端 + REST API + 本地/云双存储
+├── edgeone.json        # EdgeOne Pages 构建配置（输出目录 public）
+├── functions/
+│   └── api/
+│       ├── [[default]].js   # EdgeOne 入口：接管全部 /api/*
+│       ├── core.mjs         # EdgeOne API 核心逻辑（KV 存储 + 汇率 + 乐观锁）
+│       └── initial-data.mjs # 初始数据（由脚本生成，勿手改）
+├── scripts/
+│   └── gen-edgeone-initial.js  # 重新生成 initial-data.mjs
 ├── package.json        # 依赖
 ├── data/
 │   ├── schema.js       # 初始行程数据
