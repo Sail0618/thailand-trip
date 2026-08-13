@@ -114,19 +114,37 @@ function pruneStaleLocations(data) {
   data.locations = data.locations.filter((l) => now - (l.updatedAt || 0) < STALE_LOCATION_MS);
 }
 
-// 从 JSONBin 一次性迁移（仅当 KV 为空且配置了 JSONBIN 环境变量时）
-async function migrateFromJsonbin(env) {
+// JSONBin 直连读写（KV 未绑定时的回退存储；读写均需 Master Key）
+async function jsonbinLoad(env) {
   const binId = env && env.JSONBIN_BIN_ID;
   const key = env && env.JSONBIN_API_KEY;
   if (!binId || !key) return null;
+  const res = await fetch(`${JSONBIN_URL}/${binId}/latest`, {
+    headers: { "X-Master-Key": key },
+    signal: timeoutSignal(8000)
+  });
+  if (!res.ok) throw new Error("JSONBin 读取失败 HTTP " + res.status);
+  const payload = await res.json();
+  return payload && payload.record ? payload.record : null;
+}
+
+async function jsonbinSave(env, data) {
+  const binId = env && env.JSONBIN_BIN_ID;
+  const key = env && env.JSONBIN_API_KEY;
+  if (!binId || !key) throw new Error("未配置 JSONBIN_BIN_ID / JSONBIN_API_KEY，无法写入 JSONBin");
+  const res = await fetch(`${JSONBIN_URL}/${binId}`, {
+    method: "PUT",
+    headers: { "Content-Type": "application/json", "X-Master-Key": key },
+    body: JSON.stringify(data),
+    signal: timeoutSignal(8000)
+  });
+  if (!res.ok) throw new Error("JSONBin 写入失败 HTTP " + res.status);
+}
+
+// 从 JSONBin 一次性迁移（仅当 KV 为空且配置了 JSONBIN 环境变量时）
+async function migrateFromJsonbin(env) {
   try {
-    const res = await fetch(`${JSONBIN_URL}/${binId}/latest`, {
-      headers: { "X-Master-Key": key },
-      signal: timeoutSignal(8000)
-    });
-    if (!res.ok) return null;
-    const payload = await res.json();
-    return payload && payload.record ? payload.record : null;
+    return await jsonbinLoad(env);
   } catch (e) {
     console.error("JSONBin 迁移失败：" + (e && e.message));
     return null;
@@ -134,23 +152,34 @@ async function migrateFromJsonbin(env) {
 }
 
 async function load(kv, env) {
-  let data = await kvGet(kv, DATA_KEY);
-  if (!data) {
-    data = (await migrateFromJsonbin(env)) || clone(initialData);
-    await kvPut(kv, DATA_KEY, data);
+  if (kv) {
+    let data = await kvGet(kv, DATA_KEY);
+    if (!data) {
+      data = (await migrateFromJsonbin(env)) || clone(initialData);
+      await kvPut(kv, DATA_KEY, data);
+    }
+    return normalize(data);
   }
-  return normalize(data);
+  // KV 未绑定 → JSONBin 直连回退；再不行用初始数据
+  try {
+    const data = await jsonbinLoad(env);
+    if (data) return normalize(data);
+  } catch (e) {
+    console.error("JSONBin 读取失败，使用初始数据：" + (e && e.message));
+  }
+  return normalize(clone(initialData));
 }
 
-async function save(kv, data) {
-  await kvPut(kv, DATA_KEY, data);
+async function save(kv, env, data) {
+  if (kv) return kvPut(kv, DATA_KEY, data);
+  await jsonbinSave(env, data);
 }
 
-async function commit(kv, nextStore) {
+async function commit(kv, env, nextStore) {
   nextStore.lastUpdated = new Date().toISOString();
   nextStore.version = (Number(nextStore.version) || 0) + 1;
   pruneStaleLocations(nextStore);
-  await save(kv, nextStore);
+  await save(kv, env, nextStore);
   return nextStore;
 }
 
@@ -180,7 +209,8 @@ function timeoutSignal(ms) {
 }
 
 async function fetchLiveFxRate(kv, env) {
-  const cached = await kvGet(kv, FX_KEY);
+  let cached = null;
+  if (kv) cached = await kvGet(kv, FX_KEY);
   if (cached && cached.rate && cached.fetchedAt && Date.now() - cached.fetchedAt < FX_LIVE_CACHE_MS) {
     return { rate: cached.rate, source: cached.source, fetchedAt: cached.fetchedAt };
   }
@@ -194,7 +224,7 @@ async function fetchLiveFxRate(kv, env) {
     const rate = Number(payload && payload.rates && payload.rates.THB);
     if (!isFinite(rate) || rate <= 0) throw new Error("汇率数据异常");
     const live = { rate, source: payload.provider || "open.er-api.com", fetchedAt: Date.now() };
-    await kvPut(kv, FX_KEY, live).catch(() => {});
+    if (kv) await kvPut(kv, FX_KEY, live).catch(() => {});
     return live;
   } catch (e) {
     if (cached && cached.rate) {
@@ -244,7 +274,7 @@ async function handleApi(method, pathname, query, body, kv, env) {
       }
       const current = await load(kv, env);
       assertVersion(current, expectedVersion(query, body));
-      const saved = await commit(kv, normalize(body));
+      const saved = await commit(kv, env, normalize(body));
       return json({ ok: true, version: saved.version });
     }
     return json({ error: "不支持的方法" }, 405);
@@ -268,7 +298,7 @@ async function handleApi(method, pathname, query, body, kv, env) {
     const rate = Number(body && body.rate);
     if (!isFinite(rate) || rate <= 0) return json({ error: "汇率需为正数" }, 400);
     current.fxRate = rate;
-    const saved = await commit(kv, current);
+    const saved = await commit(kv, env, current);
     return json({ ok: true, version: saved.version });
   }
 
@@ -288,7 +318,7 @@ async function handleApi(method, pathname, query, body, kv, env) {
     assertVersion(current, expectedVersion(query, body));
     const live = await fetchLiveFxRate(kv, env);
     current.fxRate = live.rate;
-    const saved = await commit(kv, current);
+    const saved = await commit(kv, env, current);
     return json({ ok: true, rate: live.rate, source: live.source, fetchedAt: live.fetchedAt, version: saved.version });
   }
 
@@ -306,7 +336,7 @@ async function handleApi(method, pathname, query, body, kv, env) {
         flightNo: f.flightNo, bookingNo: f.bookingNo, note: f.note
       };
       current.flights.push(flight);
-      const saved = await commit(kv, current);
+      const saved = await commit(kv, env, current);
       return json({ ok: true, id: flight.id, version: saved.version });
     }
     return json({ error: "不支持的方法" }, 405);
@@ -319,12 +349,12 @@ async function handleApi(method, pathname, query, body, kv, env) {
       if (idx === -1) return json({ error: "航班不存在" }, 404);
       assertVersion(current, expectedVersion(query, body));
       current.flights[idx] = { ...current.flights[idx], ...cleanFlight(body) };
-      const saved = await commit(kv, current);
+      const saved = await commit(kv, env, current);
       return json({ ok: true, version: saved.version });
     }
     if (method === "DELETE") {
       current.flights = current.flights.filter((f) => f.id !== id);
-      const saved = await commit(kv, current);
+      const saved = await commit(kv, env, current);
       return json({ ok: true, version: saved.version });
     }
     return json({ error: "不支持的方法" }, 405);
@@ -344,7 +374,7 @@ async function handleApi(method, pathname, query, body, kv, env) {
         done: false
       };
       current.todos.push(todo);
-      const saved = await commit(kv, current);
+      const saved = await commit(kv, env, current);
       return json({ ok: true, id: todo.id, version: saved.version });
     }
     return json({ error: "不支持的方法" }, 405);
@@ -362,12 +392,12 @@ async function handleApi(method, pathname, query, body, kv, env) {
       if ("category" in patch) patch.category = cleanStr(patch.category, 50) || "其他";
       if ("date" in patch) patch.date = cleanStr(patch.date, 20);
       current.todos[idx] = { ...current.todos[idx], ...patch };
-      const saved = await commit(kv, current);
+      const saved = await commit(kv, env, current);
       return json({ ok: true, version: saved.version });
     }
     if (method === "DELETE") {
       current.todos = current.todos.filter((t) => t.id !== id);
-      const saved = await commit(kv, current);
+      const saved = await commit(kv, env, current);
       return json({ ok: true, version: saved.version });
     }
     return json({ error: "不支持的方法" }, 405);
@@ -388,7 +418,7 @@ async function handleApi(method, pathname, query, body, kv, env) {
         paid: cleanNum(body && body.paid)
       };
       budgetList(current, type).push(item);
-      const saved = await commit(kv, current);
+      const saved = await commit(kv, env, current);
       return json({ ok: true, id: item.id, version: saved.version });
     }
     return json({ error: "不支持的方法" }, 405);
@@ -408,12 +438,12 @@ async function handleApi(method, pathname, query, body, kv, env) {
       if ("item" in patch) patch.item = cleanStr(patch.item, 200);
       if ("detail" in patch) patch.detail = cleanStr(patch.detail, 500);
       list[idx] = { ...list[idx], ...patch };
-      const saved = await commit(kv, current);
+      const saved = await commit(kv, env, current);
       return json({ ok: true, version: saved.version });
     }
     if (method === "DELETE") {
       list.splice(idx, 1);
-      const saved = await commit(kv, current);
+      const saved = await commit(kv, env, current);
       return json({ ok: true, version: saved.version });
     }
     return json({ error: "不支持的方法" }, 405);
@@ -444,7 +474,7 @@ async function handleApi(method, pathname, query, body, kv, env) {
       };
       if (idx === -1) current.locations.push(entry);
       else current.locations[idx] = entry;
-      const saved = await commit(kv, current);
+      const saved = await commit(kv, env, current);
       return json({ ok: true, id, version: saved.version });
     }
     return json({ error: "不支持的方法" }, 405);
@@ -453,7 +483,7 @@ async function handleApi(method, pathname, query, body, kv, env) {
     const id = seg[2];
     const current = await load(kv, env);
     current.locations = current.locations.filter((l) => l.id !== id);
-    const saved = await commit(kv, current);
+    const saved = await commit(kv, env, current);
     return json({ ok: true, version: saved.version });
   }
 
@@ -473,9 +503,7 @@ export async function onRequest(context) {
       } catch (e) { /* 无 body 或非 JSON */ }
     }
     const kv = resolveKv(env);
-    if (!kv) {
-      return json({ error: "未绑定 KV 存储（请在控制台绑定 THAILAND_KV 命名空间）" }, 500);
-    }
+    // KV 未绑定时允许回退 JSONBin（需配置 JSONBIN_BIN_ID / JSONBIN_API_KEY）
     return await handleApi(method, url.pathname, url.searchParams, body, kv, env);
   } catch (e) {
     if (e && e.status === 409) return json({ error: e.message }, 409);

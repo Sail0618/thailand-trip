@@ -88,16 +88,18 @@ node server.js
    - EdgeOne Pages 控制台 → 创建项目 → 导入本 GitHub 仓库
    - 构建设置读取 `edgeone.json` 自动完成（输出目录 `public`）
 5. **绑定 KV**：项目详情 → KV 存储 → 绑定命名空间，**变量名填 `THAILAND_KV`**（代码里固定用这个名字）
-6. **（可选）迁移现有 JSONBin 数据**：项目设置 → 环境变量添加：
+6. **配置 JSONBin 环境变量（重要）**：项目设置 → 环境变量添加：
    - `JSONBIN_BIN_ID` = 当前 bin ID（如 `6a7becd3da38895dfed8c291`）
    - `JSONBIN_API_KEY` = 你的 Master Key
-   - 首次读取时若 KV 为空会自动从 JSONBin 一次性迁移，之后以 KV 为准；迁移完成后可移除这两个变量并撤销该 Key
+   - 说明：**KV 审批通过前，存储自动回退到 JSONBin**（读写都走 JSONBin，数据不丢）；
+     KV 绑定后优先用 KV，首次读取会自动从 JSONBin 一次性迁移，之后以 KV 为准。
 7. **部署完成后**：控制台会给一个 `https://xxx.edgeone.app` 之类的地址，**国内直接打开即可**，把链接发给朋友
 
 验证：浏览器打开 `https://你的地址/api/health`，应返回 `{"ok":true,"storage":"edgeone-kv",...}`。
 
-> 数据存在 EdgeOne KV（免费 1GB），8 人团完全够用；接口与前端全部同源，无需 CORS。
-> 汇率换算仍自动从 open.er-api.com 抓取（失败时降级用缓存值）。
+> 数据默认存在 EdgeOne KV（免费 1GB）；**KV 服务审批期间自动回退用 JSONBin**，无需等待即可上线。
+> 接口与前端全部同源，无需 CORS；汇率换算仍自动从 open.er-api.com 抓取（失败时降级用缓存值）。
+> 注意：EdgeOne Makers 的 KV 申请官方审核周期约 7 个工作日，实际可能更久；建议提交申请后先按上面步骤部署，不阻塞。
 
 ## 📁 项目结构
 

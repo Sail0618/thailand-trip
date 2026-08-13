@@ -35,13 +35,26 @@ async function api(method, path, body, env) {
 }
 
 describe("EdgeOne Pages Functions", () => {
+  let jsonbinRecord = null;
+
   before(() => {
-    // mock 汇率接口：1 CNY = 5 THB
+    // mock 汇率接口：1 CNY = 5 THB；mock JSONBin 读写
     globalThis.fetch = async (url, opts) => {
-      if (String(url).includes("open.er-api.com")) {
+      const u = String(url);
+      if (u.includes("open.er-api.com")) {
         return new Response(JSON.stringify({
           provider: "mock", rates: { THB: 5 }
         }), { status: 200, headers: { "Content-Type": "application/json" } });
+      }
+      if (u.includes("api.jsonbin.io")) {
+        if (opts && opts.method === "PUT") {
+          jsonbinRecord = JSON.parse(String(opts.body));
+          return new Response(JSON.stringify({ ok: true }), { status: 200 });
+        }
+        if (jsonbinRecord) {
+          return new Response(JSON.stringify({ record: jsonbinRecord }), { status: 200 });
+        }
+        return new Response(JSON.stringify({ error: "not found" }), { status: 404 });
       }
       return new Response(JSON.stringify({ error: "mock 404" }), { status: 404 });
     };
@@ -153,6 +166,22 @@ describe("EdgeOne Pages Functions", () => {
     assert.equal(del.status, 200);
     const { json: list2 } = await api("GET", "/api/locations");
     assert.equal(list2.length, 0);
+  });
+
+  it("无 KV 时回退 JSONBin 存储（读写）", async () => {
+    kv = null;
+    jsonbinRecord = { flights: [{ id: "x1", route: "测试航线" }], version: 3 };
+    const env = { JSONBIN_BIN_ID: "bin123", JSONBIN_API_KEY: "key123" };
+
+    const got = await api("GET", "/api/data", undefined, env);
+    assert.equal(got.status, 200);
+    assert.equal(got.json.flights.length, 1);
+    assert.equal(got.json.flights[0].route, "测试航线");
+
+    const put = await api("PUT", "/api/data", { version: 3, ...got.json }, env);
+    assert.equal(put.status, 200);
+    assert.equal(put.json.version, 4);
+    assert.equal(jsonbinRecord.version, 4);
   });
 
   it("健康检查与未知接口", async () => {
