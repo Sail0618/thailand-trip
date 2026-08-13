@@ -1,5 +1,5 @@
 // ============================================================
-// 泰国 11 日行程 · 前端逻辑
+// 泰国行程 · 前端逻辑
 // - 组件化渲染（航班/位置/行程/待办/预算）
 // - 可上下拖拽排序组件
 // - 航班/待办/预算的编辑交互
@@ -32,8 +32,7 @@ const COMPONENTS = [
   { id: "location",  title: "位置共享",    color: "location", hint: "授权后自动展示队友位置", order: 1 },
   { id: "days",      title: "每日行程",    color: "tip",     hint: "共 11 天 · 点击展开", order: 2 },
   { id: "todos",     title: "待办事项",    color: "alert",   hint: "点击勾选 · 多人同步", order: 3, addBtn: "btn-add-todo" },
-  { id: "budget",    title: "实际账单",    color: "budget",  hint: "¥ / ฿ 双币统计 · 点击修改", order: 4, addBtn: "btn-add-bill" },
-  { id: "fx",        title: "汇率换算",    color: "fx",      hint: "¥ ⇄ ฿ 实时换算 · 汇率共享可改", order: 5 }
+  { id: "budget",    title: "实际账单",    color: "budget",  hint: "¥ / ฿ 双币统计 · 点击修改", order: 4, addBtn: "btn-add-bill" }
 ];
 
 const ORDER_KEY = "trip_comp_order"; // localStorage 存储拖拽顺序
@@ -80,7 +79,6 @@ function renderContent() {
   // 各编辑中的控件不重渲染，避免轮询打断输入
   if (!editingTodoDateId) renderTodos();
   if (!editingBudgetId) renderBudget();
-  if (!fxFocused) renderFx();
 }
 
 // ============================================================
@@ -132,12 +130,6 @@ function renderComponents() {
             </div>
           </div>
           <p class="hint-note">💡 ¥ 与 ฿ 分开独立统计，互不折算。点击金额即可修改；「实收 − 支出」为结余。删除按钮 🗑️ 只删除当前币种下的该条记录。</p>`;
-        break;
-      case "fx":
-        bodyContent = `
-          <div class="section-body">
-            <div id="fx-box"></div>
-          </div>`;
         break;
     }
 
@@ -296,7 +288,7 @@ function setupSortButtons(container) {
 // 顶部信息渲染
 // ============================================================
 function renderMeta() {
-  $("hero-title").textContent = data.meta?.title || "🇹🇭 泰国 11 日完整行程";
+  $("hero-title").textContent = data.meta?.title || "🇹🇭 泰国完整行程";
   $("hero-sub").textContent = data.meta?.subtitle || "";
   $("meta-date").textContent = "📅 " + (data.meta?.dateRange || "");
   $("meta-group").textContent = "👥 " + (data.meta?.group || "");
@@ -699,6 +691,7 @@ function closeModal() {
   $("modal-overlay").style.display = "none";
   $("modal-todo-overlay").style.display = "none";
   $("modal-bill-overlay").style.display = "none";
+  $("modal-fx-overlay").style.display = "none";
 }
 
 // ============================================================
@@ -832,6 +825,14 @@ function setSync(state, text) {
 // 事件绑定
 // ============================================================
 document.addEventListener("DOMContentLoaded", () => {
+  // 汇率换算：顶部按钮 → 弹窗
+  $("btn-fx").addEventListener("click", () => {
+    renderFx();
+    $("modal-fx-overlay").style.display = "flex";
+  });
+  $("btn-cancel-fx").addEventListener("click", closeModal);
+  $("modal-fx-overlay").addEventListener("click", (e) => { if (e.target === e.currentTarget) closeModal(); });
+
   // 航班行操作（委托）：点击任意单元格打开编辑弹窗
   document.addEventListener("click", (e) => {
     const card = e.target.closest(".flight-card");

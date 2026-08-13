@@ -1,5 +1,5 @@
 /* ============================================================
-   泰国 11 日行程 · 共享编辑应用样式
+   泰国行程 · 共享编辑应用样式
    v3：精致极简风 —— 中性色板、白色卡片、细线分割、单一强调色
    ============================================================ */
 
@@ -40,21 +40,25 @@ input,select{font-family:inherit}
 /* ============ Hero ============ */
 .hero{
   background:linear-gradient(160deg,#0A3D38 0%,#0F766E 55%,#178A78 100%);
-  color:#fff;padding:54px 20px 40px;text-align:center;position:relative;overflow:hidden;
+  color:#fff;padding:14px 20px;display:flex;align-items:center;gap:10px;flex-wrap:wrap;
+  position:relative;overflow:hidden;
 }
 .hero::before{
   content:'';position:absolute;inset:0;
   background:radial-gradient(120% 90% at 50% -10%,rgba(255,255,255,.10),transparent 55%);
   pointer-events:none;
 }
-.hero h1{font-size:1.85em;margin-bottom:8px;letter-spacing:.5px;font-weight:700}
-.hero .sub{font-size:.95em;opacity:.82;margin-bottom:10px}
-.hero .meta{display:inline-flex;gap:8px;flex-wrap:wrap;justify-content:center;margin-top:14px;font-size:.78em}
-.hero .meta span{background:rgba(255,255,255,.12);border:1px solid rgba(255,255,255,.18);padding:4px 13px;border-radius:999px;backdrop-filter:blur(4px)}
+.hero h1{font-size:1.12em;margin:0;letter-spacing:.3px;font-weight:700;line-height:1.3}
+.hero .sub{font-size:.78em;opacity:.78;margin:0;line-height:1.3}
+.hero .meta{display:inline-flex;gap:6px;flex-wrap:wrap;margin:0 0 0 auto;font-size:.68em}
+.hero .meta span{background:rgba(255,255,255,.12);border:1px solid rgba(255,255,255,.18);padding:2px 10px;border-radius:999px;backdrop-filter:blur(4px)}
 .hero .meta .edit-badge{background:rgba(255,255,255,.22);border-color:rgba(255,255,255,.35)}
 
 /* ============ 顶部状态条 ============ */
-.toolbar{max-width:960px;margin:0 auto;padding:14px 16px 0;display:flex;justify-content:center}
+.toolbar{max-width:960px;margin:0 auto;padding:12px 16px 0;display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap}
+.fx-btn{display:inline-flex;align-items:center;gap:5px;font-size:.78em;font-weight:600;color:var(--primary);background:var(--primary-l);border:1px solid rgba(15,118,110,.2);padding:6px 14px;border-radius:999px;cursor:pointer;min-height:36px;transition:background .15s,transform .1s;touch-action:manipulation}
+.fx-btn:hover{background:#D8EFEA}
+.fx-btn:active{transform:scale(.96)}
 .sync-status{display:inline-flex;align-items:center;gap:7px;font-size:.78em;color:var(--text-2);background:var(--card);border:1px solid var(--border);padding:6px 16px;border-radius:999px;box-shadow:var(--shadow)}
 .sync-status .dot{width:8px;height:8px;border-radius:50%;background:#C9CECB;display:inline-block}
 .sync-status.online .dot{background:var(--ok);box-shadow:0 0 0 3px var(--ok-l)}
@@ -62,7 +66,7 @@ input,select{font-family:inherit}
 @keyframes blink{50%{opacity:.35}}
 
 /* ============ 容器 ============ */
-.container{max-width:960px;margin:0 auto;padding:18px 16px 64px}
+.container{max-width:960px;margin:0 auto;padding:14px 16px 64px}
 
 /* ============ 组件卡片 ============ */
 .section{background:var(--card);border-radius:var(--radius);box-shadow:var(--shadow);margin-bottom:18px;overflow:hidden}
@@ -279,12 +283,13 @@ input,select{font-family:inherit}
 
 /* ============ 移动端（≤720px） ============ */
 @media(max-width:720px){
-  .hero{padding:calc(34px + env(safe-area-inset-top)) 16px 30px}
-  .hero h1{font-size:1.3em;letter-spacing:.3px}
-  .hero .sub{font-size:.88em}
-  .hero .meta{gap:6px;font-size:.72em}
-  .hero .meta span{padding:3px 10px}
+  .hero{padding:calc(8px + env(safe-area-inset-top)) 12px 8px;gap:6px}
+  .hero .sub{display:none}                 /* 手机端隐藏副标题，压缩高度 */
+  .hero h1{font-size:.92em;letter-spacing:.1px}
+  .hero .meta{gap:4px;font-size:.58em}
+  .hero .meta span{padding:1px 7px}
 
+  .toolbar{padding:10px 12px 0}
   .container{padding:12px 12px 52px}
   .section{margin-bottom:14px;border-radius:16px}
   .section-header{padding:14px 14px;font-size:.94em}

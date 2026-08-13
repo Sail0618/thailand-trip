@@ -7,19 +7,18 @@
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <meta name="apple-mobile-web-app-title" content="泰国行程">
-<title>泰国 11 日行程 · 在线共享</title>
+<title>泰国行程 · 在线共享</title>
 <link rel="stylesheet" href="style.css">
 </head>
 <body>
 
 <!-- Hero -->
 <div class="hero">
-  <h1 id="hero-title">🇹🇭 泰国 11 日完整行程</h1>
+  <h1 id="hero-title">🇹🇭 泰国完整行程</h1>
   <div class="sub" id="hero-sub">曼谷 · 芭提雅 · 清迈 · 皮皮岛 · 甲米</div>
   <div class="meta">
     <span id="meta-date">📅 2026.09.24 → 10.04</span>
     <span id="meta-group">👥 8 人团</span>
-    <span id="meta-edit" class="edit-badge">✏️ 在线协作编辑中</span>
   </div>
 </div>
 
@@ -30,6 +29,7 @@
       <span class="dot"></span><span id="sync-text">连接中…</span>
     </div>
   </div>
+  <button class="fx-btn" id="btn-fx" title="汇率换算" aria-label="汇率换算">¥ ⇄ ฿ 汇率</button>
 </div>
 
 <div class="container">
@@ -38,7 +38,7 @@
   <div id="components"></div>
 
   <div class="footer">
-    <p>📋 米多多的泰国 11 日完整行程 · 8 人团 · 2026.09.24-10.04 · 在线协作共享版</p>
+    <p>📋 米多多的泰国完整行程 · 8 人团 · 2026.09.24-10.04 · 在线协作共享版</p>
     <p>拖动组件标题左侧的 ⋮⋮（电脑）或用 ↑↓ 按钮（手机）调整顺序 · 祝旅途愉快！🎉</p>
   </div>
 
@@ -130,6 +130,18 @@
       <span style="flex:1"></span>
       <button class="btn btn-outline" id="btn-cancel-todo">取消</button>
       <button class="btn btn-primary" id="btn-save-todo">保存</button>
+    </div>
+  </div>
+</div>
+
+<!-- 编辑浮层：汇率换算 -->
+<div class="modal-overlay" id="modal-fx-overlay" style="display:none">
+  <div class="modal">
+    <div class="modal-header">汇率换算</div>
+    <div class="modal-body" id="fx-box"></div>
+    <div class="modal-footer">
+      <span style="flex:1"></span>
+      <button class="btn btn-outline" id="btn-cancel-fx">关闭</button>
     </div>
   </div>
 </div>
