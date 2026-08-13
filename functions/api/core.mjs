@@ -151,12 +151,25 @@ async function migrateFromJsonbin(env) {
   }
 }
 
+// 判断是否为"未初始化模板"（内置初始数据，尚无真实写入）
+// 特征：version <= 0 且 lastUpdated 为空。真实保存过的数据 version>=1 且带时间戳。
+function isUninitializedTemplate(data) {
+  return !data || (Number(data.version) <= 0 && !data.lastUpdated);
+}
+
 async function load(kv, env) {
   if (kv) {
     let data = await kvGet(kv, DATA_KEY);
     if (!data) {
       data = (await migrateFromJsonbin(env)) || clone(initialData);
       await kvPut(kv, DATA_KEY, data);
+    } else if (isUninitializedTemplate(data) && env && env.JSONBIN_BIN_ID) {
+      // KV 里还是初始模板，但已配置 JSONBin → 重新拉取真实数据覆盖（修复历史误初始化）
+      const migrated = await migrateFromJsonbin(env);
+      if (migrated) {
+        data = migrated;
+        await kvPut(kv, DATA_KEY, data);
+      }
     }
     return normalize(data);
   }

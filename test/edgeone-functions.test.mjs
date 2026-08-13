@@ -184,6 +184,24 @@ describe("EdgeOne Pages Functions", () => {
     assert.equal(jsonbinRecord.version, 4);
   });
 
+  it("KV 里是初始模板且配置了 JSONBin 时，自动重新迁移真实数据", async () => {
+    // 模拟历史误初始化：KV 里存了初始模板（fxRate=5, version=0）
+    kv = new MockKV({ data: JSON.stringify({ flights: [], fxRate: 5, version: 0, lastUpdated: null }) });
+    // JSONBin 里有真实数据
+    jsonbinRecord = { flights: [{ id: "x1", route: "真实航线" }], fxRate: 4.897237, version: 22, lastUpdated: "2026-08-13T08:41:33Z" };
+    const env = { JSONBIN_BIN_ID: "bin123", JSONBIN_API_KEY: "key123" };
+
+    const got = await api("GET", "/api/data", undefined, env);
+    assert.equal(got.status, 200);
+    assert.equal(got.json.fxRate, 4.897237);
+    assert.equal(got.json.version, 22);
+    assert.equal(got.json.flights[0].route, "真实航线");
+
+    // KV 应已被真实数据覆盖
+    const stored = JSON.parse(kv.map.get("data"));
+    assert.equal(stored.fxRate, 4.897237);
+  });
+
   it("健康检查与未知接口", async () => {
     kv = new MockKV();
     const health = await api("GET", "/api/health");
