@@ -28,11 +28,12 @@ const CAT_COLOR = { "机票": "#1976D2", "船票": "#00796B", "住宿": "#F57C00
 // 组件定义（决定顺序，可拖拽调整）
 // ============================================================
 const COMPONENTS = [
-  { id: "flights",   title: "✈️ 航班总览",   color: "flight",  hint: "（点击可编辑，实时同步）", order: 0 },
-  { id: "location",  title: "📍 位置共享",    color: "location", hint: "（授权后自动展示队友位置）", order: 1 },
-  { id: "days",      title: "🗓️ 每日行程",    color: "tip",     hint: "（11 天）", order: 2 },
-  { id: "todos",     title: "⏳ 待办事项",    color: "alert",   hint: "（点击勾选，多人同步）", order: 3 },
-  { id: "budget",    title: "💰 实际账单",    color: "budget",  hint: "（¥ / ฿ 双币统计，点击修改）", order: 4 }
+  { id: "flights",   title: "航班总览",   color: "flight",  hint: "点击卡片可编辑 · 实时同步", order: 0, addBtn: "btn-add-flight" },
+  { id: "location",  title: "位置共享",    color: "location", hint: "授权后自动展示队友位置", order: 1 },
+  { id: "days",      title: "每日行程",    color: "tip",     hint: "共 11 天 · 点击展开", order: 2 },
+  { id: "todos",     title: "待办事项",    color: "alert",   hint: "点击勾选 · 多人同步", order: 3, addBtn: "btn-add-todo" },
+  { id: "budget",    title: "实际账单",    color: "budget",  hint: "¥ / ฿ 双币统计 · 点击修改", order: 4, addBtn: "btn-add-bill" },
+  { id: "fx",        title: "汇率换算",    color: "fx",      hint: "¥ ⇄ ฿ 实时换算 · 汇率共享可改", order: 5 }
 ];
 
 const ORDER_KEY = "trip_comp_order"; // localStorage 存储拖拽顺序
@@ -79,6 +80,8 @@ function renderContent() {
   renderTodos();
   // 预算正在编辑时不重渲染，避免轮询把用户正在输入的单元格清掉
   if (!editingBudgetId) renderBudget();
+  // 汇率输入中同理
+  if (!fxFocused) renderFx();
 }
 
 // ============================================================
@@ -96,19 +99,16 @@ function renderComponents() {
     switch (c.id) {
       case "flights":
         bodyContent = `
-          <div class="section-body" style="overflow-x:auto">
-            <table class="flight-table" id="flight-table">
-              <thead><tr><th>日期</th><th>航线</th><th>出发</th><th>到达</th><th>航班号</th><th>预订号</th><th>状态</th><th>操作</th></tr></thead>
-              <tbody id="flight-body"></tbody>
-            </table>
-            <p class="hint-note">💡 点击任意单元格即可修改，改动会实时同步给所有打开此页面的朋友。未订票航班请及时预订。</p>
+          <div class="section-body">
+            <div id="flight-list" class="flight-list"></div>
+            <p class="hint-note">💡 点击航班卡片即可修改，改动会实时同步给所有打开此页面的朋友。未订票航班请及时预订。</p>
           </div>`;
         break;
       case "location":
         bodyContent = `
           <div class="section-body" style="padding:0">
             <iframe src="/location.html" class="loc-iframe" id="loc-iframe"
-              style="width:100%;height:520px;border:none;border-radius:0 0 14px 14px"
+              style="width:100%;border:none;border-radius:0 0 14px 14px"
               title="位置共享"></iframe>
           </div>`;
         break;
@@ -122,25 +122,23 @@ function renderComponents() {
         bodyContent = `
           <div class="budget-dual">
             <div class="budget-panel cny">
-              <h4 class="budget-panel-title">¥ 人民币</h4>
-              <div class="budget-scroll">
-                <table class="budget-table" id="budget-table-cny">
-                  <thead><tr><th style="width:62%;text-align:left;padding-left:8px">事项</th><th>支出</th><th>实收</th><th style="width:9%"></th></tr></thead>
-                  <tbody id="budget-body-cny"></tbody>
-                </table>
-              </div>
+              <div class="budget-panel-title">¥ 人民币</div>
+              <div class="bill-list" id="budget-list-cny"></div>
+              <div class="bill-totals" id="budget-totals-cny"></div>
             </div>
             <div class="budget-panel thb">
-              <h4 class="budget-panel-title">฿ 泰铢</h4>
-              <div class="budget-scroll">
-                <table class="budget-table" id="budget-table-thb">
-                  <thead><tr><th style="width:62%;text-align:left;padding-left:8px">事项</th><th>支出</th><th>实收</th><th style="width:9%"></th></tr></thead>
-                  <tbody id="budget-body-thb"></tbody>
-                </table>
-              </div>
+              <div class="budget-panel-title">฿ 泰铢</div>
+              <div class="bill-list" id="budget-list-thb"></div>
+              <div class="bill-totals" id="budget-totals-thb"></div>
             </div>
           </div>
-          <p class="hint-note">💡 ¥ 与 ฿ 分开独立统计，互不折算。点击单元格修改金额；「实收 − 支出」为结余，负数变红表示超支。删除按钮 🗑️ 只删除当前币种（¥ 或 ฿）下的该条记录，两表互不影响。</p>`;
+          <p class="hint-note">💡 ¥ 与 ฿ 分开独立统计，互不折算。点击金额即可修改；「实收 − 支出」为结余。删除按钮 🗑️ 只删除当前币种下的该条记录。</p>`;
+        break;
+      case "fx":
+        bodyContent = `
+          <div class="section-body">
+            <div id="fx-box"></div>
+          </div>`;
         break;
     }
 
@@ -150,6 +148,7 @@ function renderComponents() {
           <span class="drag-handle" title="拖动排序" draggable="true">⋮⋮</span>
           ${escapeHtml(c.title)} <span class="section-hint">${escapeHtml(c.hint)}</span>
           <span class="comp-actions">
+            ${c.addBtn ? `<button class="add-btn" id="${c.addBtn}" title="新增" aria-label="新增">＋ 新增</button>` : ""}
             <button class="sort-btn" data-sort="up" title="上移" aria-label="上移">↑</button>
             <button class="sort-btn" data-sort="down" title="下移" aria-label="下移">↓</button>
           </span>
@@ -314,24 +313,42 @@ function renderAlert() {
 // 航班渲染
 // ============================================================
 function renderFlights() {
-  const tbody = $("flight-body");
-  if (!tbody) return;
-  tbody.innerHTML = (data.flights || []).map((f) => {
+  const list = $("flight-list");
+  if (!list) return;
+  const flights = data.flights || [];
+  const dash = (v) => escapeHtml(v || "—");
+  const cards = flights.map((f) => {
     const cls = STATUS_CLASS[f.status] || "pending";
-    return `<tr class="${cls}" data-id="${escapeHtml(f.id)}">
-      <td>${escapeHtml(f.date)}</td>
-      <td class="route">${escapeHtml(f.route)}</td>
-      <td>${escapeHtml(f.dep)}</td>
-      <td>${escapeHtml(f.arr)}</td>
-      <td>${escapeHtml(f.flightNo)}</td>
-      <td>${escapeHtml(f.bookingNo)}</td>
-      <td><span class="status-pill ${cls}">${escapeHtml(f.status)}</span></td>
-      <td>
-        <button class="btn-icon" data-act="edit" title="编辑">✏️</button>
-        <button class="btn-icon" data-act="del" title="删除">🗑️</button>
-      </td>
-    </tr>`;
+    const meta = [];
+    if (f.dep) meta.push(`<span class="m"><em>出发</em>${escapeHtml(f.dep)}</span>`);
+    if (f.arr) meta.push(`<span class="m"><em>到达</em>${escapeHtml(f.arr)}</span>`);
+    if (f.flightNo && f.flightNo !== "—") meta.push(`<span class="m"><em>航班</em>${escapeHtml(f.flightNo)}</span>`);
+    return `
+      <div class="flight-card ${cls}" data-id="${escapeHtml(f.id)}">
+        <div class="fc-top">
+          <span class="fc-date">${dash(f.date)}</span>
+          <span class="status-pill ${cls}">${escapeHtml(f.status || "待定")}</span>
+        </div>
+        <div class="fc-route">${dash(f.route)}</div>
+        ${meta.length ? `<div class="fc-meta">${meta.join("")}</div>` : ""}
+        <div class="fc-foot">
+          <span>预订号 ${dash(f.bookingNo)}</span>
+          <span class="fc-actions">
+            <button class="btn-icon" data-act="edit" title="编辑">✏️</button>
+            <button class="btn-icon" data-act="del" title="删除">🗑️</button>
+          </span>
+        </div>
+      </div>`;
   }).join("");
+
+  if (!cards) {
+    list.innerHTML = `<div class="fc-empty">暂无航班，点上方 ＋ 新增</div>`;
+  } else {
+    list.innerHTML = cards + `
+      <div class="fc-add-row" id="fc-add-row">＋ 新增航班</div>`;
+    const addRow = $("fc-add-row");
+    if (addRow) addRow.addEventListener("click", openNewFlightModal);
+  }
 }
 
 // ============================================================
@@ -341,24 +358,23 @@ function renderDays() {
   const container = $("days-container");
   if (!container) return;
   container.innerHTML = (data.days || []).map((d) => `
-    <div class="day-card" style="border-left-color:${escapeHtml(d.color)}">
-      <div class="day-header" data-day="${escapeHtml(d.id)}">
+    <div class="day-card" style="--dayc:${escapeHtml(d.color)};--dayl:${escapeHtml(d.color)}1A">
+      <div class="day-header" data-day="${escapeHtml(d.id)}" role="button" tabindex="0" aria-expanded="false">
         <div class="left">
-          <div class="day-badge" style="background:${escapeHtml(d.color)}">
-            <span class="d">${escapeHtml(d.date)}</span><span class="m">${escapeHtml(d.month)}</span>
-          </div>
+          <div class="day-badge" title="${escapeHtml(d.date)} ${escapeHtml(d.month)}">${escapeHtml(d.date)}</div>
           <div>
             <div class="day-title">${escapeHtml(d.title)}</div>
             <div class="day-sub">${escapeHtml(d.sub)} · ${escapeHtml(d.weekday)}</div>
           </div>
         </div>
-        <span class="day-tag" style="background:${escapeHtml(d.color)}">${escapeHtml(d.tag)}</span>
+        <span class="day-tag">${escapeHtml(d.tag)}</span>
+        <span class="day-chevron" aria-hidden="true">▾</span>
       </div>
       <div class="day-body" id="day-body-${escapeHtml(d.id)}">
         <div class="timeline">
           ${(d.items || []).map((it) => `
             <div class="tl-item">
-              <div class="tl-dot" style="background:${escapeHtml(d.color)}">${escapeHtml(it.dot)}</div>
+              <div class="tl-dot">${escapeHtml(it.dot)}</div>
               <div class="tl-time">${escapeHtml(it.time)}</div>
               <div class="tl-title">${escapeHtml(it.title)}</div>
               <div class="tl-desc"><ul>${(it.desc || []).map((x) => `<li>${escapeHtml(x)}</li>`).join("")}</ul></div>
@@ -368,9 +384,15 @@ function renderDays() {
     </div>`).join("");
 
   document.querySelectorAll(".day-header").forEach((h) => {
-    h.addEventListener("click", () => {
+    const toggle = () => {
       const body = document.getElementById("day-body-" + h.dataset.day);
-      if (body) body.classList.toggle("open");
+      if (!body) return;
+      const open = body.classList.toggle("open");
+      h.setAttribute("aria-expanded", open ? "true" : "false");
+    };
+    h.addEventListener("click", toggle);
+    h.addEventListener("keydown", (e) => {
+      if (e.key === "Enter" || e.key === " ") { e.preventDefault(); toggle(); }
     });
   });
 }
@@ -411,41 +433,174 @@ function renderTodos() {
 // 预算渲染
 // ============================================================
 function renderBudget() {
-  const bodyCNY = $("budget-body-cny");
-  const bodyTHB = $("budget-body-thb");
-  if (!bodyCNY && !bodyTHB) return;
+  const listCNY = $("budget-list-cny");
+  const listTHB = $("budget-list-thb");
+  const totalCNY = $("budget-totals-cny");
+  const totalTHB = $("budget-totals-thb");
+  if (!listCNY && !listTHB) return;
   const GROUP_SIZE = 8; // 8 人团
 
-  // 单货币表格渲染器（¥ / ฿ 各自独立的数组，删除/新增互不影响）
-  const renderOne = (tbody, list, sym) => {
-    if (!tbody) return;
+  // 单货币渲染器（¥ / ฿ 各自独立，行布局不横向滚动）
+  const renderOne = (listEl, totalEl, list, sym) => {
+    if (!listEl) return;
     const items_ = list || [];
     const spendTotal = items_.reduce((s,b)=>s+(Number(b.spend)||0),0);
     const paidTotal  = items_.reduce((s,b)=>s+(Number(b.paid)||0),0);
     const bal = paidTotal - spendTotal;
-    const cls = bal < 0 ? "is-deficit" : "is-surplus";
-    tbody.innerHTML = items_.map((b) => `
-      <tr data-id="${escapeHtml(b.id)}">
-        <td style="text-align:left;padding-left:8px">${escapeHtml(b.item)}${b.detail ? `<span style="color:var(--text-l);font-weight:400"> · ${escapeHtml(b.detail)}</span>` : ""}</td>
-        <td class="editable" data-field="spend" data-act="edit-budget">${fmtMoney(b.spend, sym)}</td>
-        <td class="editable" data-field="paid"  data-act="edit-budget">${fmtMoney(b.paid, sym)}</td>
-        <td style="padding:4px"><button class="btn-icon" data-act="del-bill" title="删除该账单">🗑️</button></td>
-      </tr>`).join("") + `
-      <tr class="budget-total"><td style="text-align:left;padding-left:8px">总计</td><td>${fmtMoney(spendTotal, sym)}</td><td>${fmtMoney(paidTotal, sym)}</td><td></td></tr>
-      <tr class="budget-total" style="background:var(--blue-l)"><td style="text-align:left;padding-left:8px;font-weight:600">人均</td><td style="font-weight:600">${fmtMoney(spendTotal/GROUP_SIZE, sym)}</td><td style="font-weight:600">${fmtMoney(paidTotal/GROUP_SIZE, sym)}</td><td></td></tr>
-      <tr class="budget-total budget-balance ${cls}"><td style="text-align:left;padding-left:8px;font-weight:600">结余</td><td colspan="2" style="font-weight:600">${fmtMoney(bal, sym)}</td><td></td></tr>`;
+    const cls = bal < 0 ? "deficit" : "surplus";
+
+    if (!items_.length) {
+      listEl.innerHTML = `<div class="bills-empty">暂无账单，点组件右上角 ＋ 新增</div>`;
+    } else {
+      listEl.innerHTML = items_.map((b) => `
+        <div class="bill-row" data-id="${escapeHtml(b.id)}">
+          <div class="br-main">
+            <div class="br-item">${escapeHtml(b.item)}${b.detail ? `<span class="br-detail"> · ${escapeHtml(b.detail)}</span>` : ""}</div>
+            <div class="br-nums">
+              <div class="br-num"><label>支出</label><span class="editable" data-field="spend" data-act="edit-budget">${fmtMoney(b.spend, sym)}</span></div>
+              <div class="br-num"><label>实收</label><span class="editable" data-field="paid" data-act="edit-budget">${fmtMoney(b.paid, sym)}</span></div>
+            </div>
+          </div>
+          <button class="btn-icon" data-act="del-bill" title="删除该账单">🗑️</button>
+        </div>`).join("");
+    }
+
+    if (totalEl) {
+      totalEl.innerHTML = `
+        <div class="bill-total"><span>总计</span><b>${fmtMoney(spendTotal, sym)}</b></div>
+        <div class="bill-total"><span>人均</span><b>${fmtMoney(spendTotal/GROUP_SIZE, sym)}</b></div>
+        <div class="bill-total balance ${cls}"><span>结余</span><b>${fmtMoney(bal, sym)}</b></div>`;
+    }
   };
 
-  renderOne(bodyCNY, data.budgetCNY, "¥");
-  renderOne(bodyTHB, data.budgetTHB, "฿");
+  renderOne(listCNY, totalCNY, data.budgetCNY, "¥");
+  renderOne(listTHB, totalTHB, data.budgetTHB, "฿");
 
-  // 绑定编辑
-  document.querySelectorAll("#budget-body-cny [data-act='edit-budget'], #budget-body-thb [data-act='edit-budget']").forEach((td) => {
-    td.addEventListener("click", () => {
-      const id = td.closest("tr").dataset.id;
-      const type = td.closest("#budget-body-cny") ? "cny" : "thb";
-      startBudgetEdit(type, id, td, td.dataset.field);
+  // 绑定编辑（span 可点击，行内替换为输入框）
+  document.querySelectorAll("[data-act='edit-budget']").forEach((el) => {
+    el.addEventListener("click", () => {
+      const row = el.closest(".bill-row");
+      if (!row) return;
+      const type = el.closest(".budget-panel.cny") ? "cny" : "thb";
+      startBudgetEdit(type, row.dataset.id, el, el.dataset.field);
     });
+  });
+}
+
+// ============================================================
+// 汇率换算（¥ ⇄ ฿）
+// ============================================================
+let fxFocused = false;   // 汇率输入框聚焦中（轮询不重建）
+let fxCny = "";          // 保留输入值，避免轮询重渲染清空
+let fxThb = "";
+let fxLiveText = "";     // 最近一次实时汇率提示（轮询重渲染时保留）
+
+function round2(n) {
+  return Math.round(n * 100) / 100;
+}
+
+function renderFx() {
+  const box = $("fx-box");
+  if (!box) return;
+  const rate = Number(data.fxRate) || 5;
+  box.innerHTML = `
+    <div class="fx-rate-row">
+      <span class="fx-rate-label">汇率</span>
+      <span class="fx-rate-eq">1 元 =</span>
+      <input class="fx-rate-input" id="fx-rate" inputmode="decimal" value="${rate}">
+      <span class="fx-rate-unit">泰铢</span>
+      <button class="fx-refresh" id="fx-refresh" title="获取实时汇率并应用" aria-label="获取实时汇率">↻</button>
+    </div>
+    <p class="fx-note">汇率全团共享 · 每 6 小时自动更新，也可点 ↻ 立即刷新</p>
+    <p class="fx-live" id="fx-live">${escapeHtml(fxLiveText)}</p>
+    <div class="fx-convert">
+      <div class="fx-row">
+        <span class="fx-label">¥ 人民币</span>
+        <input class="fx-input" id="fx-cny" inputmode="decimal" placeholder="输入金额" value="${escapeHtml(fxCny)}">
+      </div>
+      <div class="fx-row">
+        <span class="fx-label">฿ 泰铢</span>
+        <input class="fx-input" id="fx-thb" inputmode="decimal" placeholder="输入金额" value="${escapeHtml(fxThb)}">
+      </div>
+    </div>`;
+
+  const rateInput = $("fx-rate");
+  const cny = $("fx-cny");
+  const thb = $("fx-thb");
+
+  const getRate = () => {
+    const r = parseFloat(rateInput.value);
+    return isFinite(r) && r > 0 ? r : 0;
+  };
+
+  const convert = (from) => {
+    const r = getRate();
+    if (!r) return;
+    if (from === "cny") {
+      const v = parseFloat(cny.value);
+      thb.value = isNaN(v) ? "" : String(round2(v * r));
+    } else {
+      const v = parseFloat(thb.value);
+      cny.value = isNaN(v) ? "" : String(round2(v / r));
+    }
+  };
+
+  cny.addEventListener("input", () => { fxCny = cny.value; convert("cny"); });
+  thb.addEventListener("input", () => { fxThb = thb.value; convert("thb"); });
+
+  rateInput.addEventListener("input", () => { if (fxCny !== "") convert("cny"); });
+  rateInput.addEventListener("change", () => {
+    const r = getRate();
+    if (!r) {
+      rateInput.value = Number(data.fxRate) || 5;
+      return;
+    }
+    apiPost("/api/fx", { rate: r, version: data.version }).then((ok) => {
+      if (ok) { data.fxRate = r; fxCny = cny.value; fxThb = thb.value; }
+    });
+  });
+
+  const refreshBtn = $("fx-refresh");
+  if (refreshBtn) {
+    refreshBtn.addEventListener("click", async () => {
+      refreshBtn.classList.add("spinning");
+      refreshBtn.disabled = true;
+      try {
+        const res = await fetch("/api/fx/refresh", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ version: data ? data.version : undefined })
+        });
+        if (res.status === 409) {
+          setSync("offline", "数据已更新，正在刷新…");
+          poll();
+          return;
+        }
+        const json = await res.json().catch(() => ({}));
+        if (json.ok) {
+          if (data) {
+            if (typeof json.version === "number") data.version = json.version;
+            data.fxRate = json.rate;
+          }
+          const t = new Date(json.fetchedAt);
+          fxLiveText = `实时汇率：1 元 = ${json.rate} 泰铢 · ${t.toLocaleString("zh-CN", { hour: "2-digit", minute: "2-digit" })} 更新`;
+          renderFx();
+          setSync("online", "已应用实时汇率");
+        } else {
+          setSync("offline", (json && json.error) || "获取实时汇率失败");
+        }
+      } catch (e) {
+        setSync("offline", "获取实时汇率失败");
+      } finally {
+        refreshBtn.classList.remove("spinning");
+        refreshBtn.disabled = false;
+      }
+    });
+  }
+
+  [cny, thb, rateInput].forEach((el) => {
+    el.addEventListener("focus", () => { fxFocused = true; });
+    el.addEventListener("blur", () => { fxFocused = false; fxCny = cny.value; fxThb = thb.value; });
   });
 }
 
@@ -510,7 +665,7 @@ function startBudgetEdit(type, id, td, field) {
   input.style.border = "1.5px solid var(--primary)";
   input.style.borderRadius = "6px";
   input.style.textAlign = "center";
-  input.style.fontSize = "0.95em";
+  input.style.fontSize = "1rem"; // 16px，避免 iOS 聚焦输入时自动放大页面
   td.textContent = "";
   td.appendChild(input);
   input.focus();
@@ -524,7 +679,8 @@ function startBudgetEdit(type, id, td, field) {
     if (save) {
       const val = parseFloat(input.value);
       if (!isNaN(val) && val !== oldVal) {
-        apiPost(`/api/budget/${type}/${id}`, { [field]: val, version: data.version });
+        apiPost(`/api/budget/${type}/${id}`, { [field]: val, version: data.version })
+          .then((ok) => { if (ok) renderBudget(); });
       }
     }
   };
@@ -623,20 +779,36 @@ function setSync(state, text) {
 document.addEventListener("DOMContentLoaded", () => {
   // 航班行操作（委托）：点击任意单元格打开编辑弹窗
   document.addEventListener("click", (e) => {
-    const editRow = e.target.closest("#flight-body tr");
-    if (editRow) {
-      const id = editRow.dataset.id;
+    const card = e.target.closest(".flight-card");
+    if (card) {
+      const id = card.dataset.id;
       const actBtn = e.target.closest("[data-act]");
       if (actBtn) {
         if (actBtn.dataset.act === "edit") openFlightModal(id);
         if (actBtn.dataset.act === "del" && confirm("删除这段航班？")) apiDelete(`/api/flights/${id}`);
-      } else if (e.target.closest("td")) {
+      } else {
         openFlightModal(id);
       }
     }
   });
 
-  $("btn-add-flight").addEventListener("click", openNewFlightModal);
+  // 新增按钮（动态渲染进组件头部）→ 用事件委托，不依赖渲染时机
+  document.addEventListener("click", (e) => {
+    const addBtn = e.target.closest("#btn-add-flight, #btn-add-todo, #btn-add-bill");
+    if (!addBtn) return;
+    if (addBtn.id === "btn-add-flight") openNewFlightModal();
+    else if (addBtn.id === "btn-add-todo") {
+      $("t-text").value = "";
+      $("modal-todo-overlay").style.display = "flex";
+    } else if (addBtn.id === "btn-add-bill") {
+      $("b-item").value = "";
+      $("b-detail").value = "";
+      $("b-spend").value = 0;
+      $("b-paid").value = 0;
+      $("modal-bill-overlay").style.display = "flex";
+    }
+  });
+
   $("btn-cancel").addEventListener("click", closeModal);
   $("btn-save-flight").addEventListener("click", () => {
     const body = {
@@ -653,10 +825,6 @@ document.addEventListener("DOMContentLoaded", () => {
     if (editingFlightId && confirm("删除这段航班？")) { apiDelete(`/api/flights/${editingFlightId}`); closeModal(); }
   });
 
-  $("btn-add-todo").addEventListener("click", () => {
-    $("t-text").value = "";
-    $("modal-todo-overlay").style.display = "flex";
-  });
   $("btn-cancel-todo").addEventListener("click", closeModal);
   $("btn-save-todo").addEventListener("click", () => {
     const text = $("t-text").value.trim();
@@ -670,14 +838,6 @@ document.addEventListener("DOMContentLoaded", () => {
   $("modal-todo-overlay").addEventListener("click", (e) => { if (e.target === e.currentTarget) closeModal(); });
   $("modal-bill-overlay").addEventListener("click", (e) => { if (e.target === e.currentTarget) closeModal(); });
 
-  // 新增账单按钮
-  $("btn-add-bill").addEventListener("click", () => {
-    $("b-item").value = "";
-    $("b-detail").value = "";
-    $("b-spend").value = 0;
-    $("b-paid").value = 0;
-    $("modal-bill-overlay").style.display = "flex";
-  });
   // 币种切换时更新支出/实收标签的颜色
   $("b-type").addEventListener("change", () => {
     const isTHB = $("b-type").value === "thb";
@@ -703,9 +863,9 @@ document.addEventListener("DOMContentLoaded", () => {
   document.addEventListener("click", (e) => {
     const delBtn = e.target.closest('[data-act="del-bill"]');
     if (delBtn) {
-      const tr = delBtn.closest("tr");
-      const type = delBtn.closest("#budget-body-cny") ? "cny" : "thb";
-      if (tr && confirm("删除该账单？")) apiDelete(`/api/budget/${type}/${tr.dataset.id}`);
+      const row = delBtn.closest(".bill-row");
+      const type = delBtn.closest(".budget-panel.cny") ? "cny" : "thb";
+      if (row && confirm("删除该账单？")) apiDelete(`/api/budget/${type}/${row.dataset.id}`);
     }
   });
 

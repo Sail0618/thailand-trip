@@ -47,6 +47,11 @@ const STALE_LOCATION_MS = 10 * 60 * 1000; // 10 分钟
 // GET 读缓存：轮询每 4s 一次，命中缓存可大幅减少 JSONBin 请求（配额保护）
 const CACHE_TTL_MS = 2500;
 
+// 实时汇率：open.er-api.com 免费 API（无需 Key，CNY 为基准返回 THB 等币种）
+const FX_API_URL = "https://open.er-api.com/v6/latest/CNY";
+const FX_AUTO_REFRESH_MS = 6 * 60 * 60 * 1000; // 每 6 小时自动更新一次
+const FX_LIVE_CACHE_MS = 10 * 60 * 1000;        // 实时汇率缓存 10 分钟
+
 // 运行期固定的 bin ID（一旦确定，进程内不再改变）
 let runtimeBinId = null;
 
@@ -194,6 +199,8 @@ function normalize(data) {
   data.todos = Array.isArray(data.todos) ? data.todos : [];
   data.locations = Array.isArray(data.locations) ? data.locations : [];
   data.meta = data.meta || clone(initialData.meta);
+  const fx = Number(data.fxRate);
+  data.fxRate = isFinite(fx) && fx > 0 ? fx : 5;
   if (!data.alert) data.alert = null;
   data.lastUpdated = data.lastUpdated || null;
   data.version = Number(data.version) || 0;
@@ -488,6 +495,91 @@ app.delete("/api/budget/:type/:id", route(async (req, res) => {
   res.json({ ok: true, version: saved.version });
 }));
 
+// 更新汇率（1 元 = rate 泰铢，团内共享）
+app.post("/api/fx", route(async (req, res) => {
+  const current = await getStore();
+  assertVersion(current, expectedVersion(req));
+  const rate = Number(req.body?.rate);
+  if (!isFinite(rate) || rate <= 0) {
+    return res.status(400).json({ error: "汇率需为正数" });
+  }
+  current.fxRate = rate;
+  const saved = await commit(current);
+  res.json({ ok: true, version: saved.version });
+}));
+
+// ------------------------------------------------------------
+// 实时汇率（自动抓取，open.er-api.com）
+// ------------------------------------------------------------
+let fxLive = { rate: null, source: null, fetchedAt: null, error: null };
+
+// 抓取实时汇率（1 元 = ? 泰铢）；命中缓存直接返回；失败时若有过期值则降级返回
+async function fetchLiveFxRate() {
+  if (fxLive.rate && fxLive.fetchedAt && Date.now() - fxLive.fetchedAt < FX_LIVE_CACHE_MS) {
+    return { rate: fxLive.rate, source: fxLive.source, fetchedAt: fxLive.fetchedAt };
+  }
+  try {
+    const res = await fetch(FX_API_URL, {
+      headers: { Accept: "application/json" },
+      signal: AbortSignal.timeout(8000)
+    });
+    if (!res.ok) throw new Error("汇率 API HTTP " + res.status);
+    const json = await res.json();
+    const rate = Number(json?.rates?.THB);
+    if (!isFinite(rate) || rate <= 0) throw new Error("汇率数据异常");
+    fxLive = { rate, source: json.provider || "open.er-api.com", fetchedAt: Date.now(), error: null };
+    return { rate, source: fxLive.source, fetchedAt: fxLive.fetchedAt };
+  } catch (e) {
+    fxLive.error = e.message;
+    if (fxLive.rate) {
+      // 有历史值：降级使用（标记 stale）
+      return { rate: fxLive.rate, source: fxLive.source, fetchedAt: fxLive.fetchedAt, stale: true, error: e.message };
+    }
+    throw new Error("获取实时汇率失败：" + e.message);
+  }
+}
+
+// 抓取并应用实时汇率（自动更新用，失败不抛到上层）
+async function applyLiveFxRate() {
+  const live = await fetchLiveFxRate();
+  const current = await getStore();
+  if (Math.abs(Number(current.fxRate) - live.rate) < 0.0001) {
+    return { rate: live.rate, source: live.source, applied: false };
+  }
+  current.fxRate = live.rate;
+  await commit(current);
+  return { rate: live.rate, source: live.source, applied: true };
+}
+
+async function autoRefreshFx() {
+  try {
+    const r = await applyLiveFxRate();
+    console.log(`📈 实时汇率自动更新：1 元 = ${r.rate} 泰铢${r.applied ? "" : "（无变化）"}`);
+  } catch (e) {
+    console.error("⚠️ 实时汇率自动更新失败：", e.message);
+  }
+}
+
+// 查询实时汇率（不写入）
+app.get("/api/fx/live", route(async (req, res) => {
+  try {
+    const live = await fetchLiveFxRate();
+    res.json({ ok: true, ...live });
+  } catch (e) {
+    res.status(502).json({ ok: false, error: e.message });
+  }
+}));
+
+// 抓取实时汇率并应用（带乐观锁）
+app.post("/api/fx/refresh", route(async (req, res) => {
+  const current = await getStore();
+  assertVersion(current, expectedVersion(req));
+  const live = await fetchLiveFxRate();
+  current.fxRate = live.rate;
+  const saved = await commit(current);
+  res.json({ ok: true, rate: live.rate, source: live.source, fetchedAt: live.fetchedAt, version: saved.version });
+}));
+
 // 状态选项
 app.get("/api/status-options", (req, res) => res.json(STATUS_OPTIONS));
 
@@ -567,5 +659,8 @@ if (require.main === module) {
     if (process.env.JSONBIN_API_KEY && !process.env.JSONBIN_BIN_ID) {
       console.log("   ⚠️ 提示：建议配置 JSONBIN_BIN_ID 环境变量，避免多实例各自建 bin");
     }
+    // 实时汇率：启动 3 秒后抓取一次，之后每 6 小时自动更新
+    setTimeout(autoRefreshFx, 3000);
+    setInterval(autoRefreshFx, FX_AUTO_REFRESH_MS);
   });
 }

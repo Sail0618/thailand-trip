@@ -110,9 +110,18 @@ thailand-trip/
 | POST | `/api/budget/:type/:id` | 更新预算项 |
 | POST | `/api/budget/:type` | 新增预算项 |
 | DELETE | `/api/budget/:type/:id` | 删除预算项（只删当前币种） |
+| POST | `/api/fx` | 更新汇率（1 元 = rate 泰铢，团内共享） |
+| GET | `/api/fx/live` | 获取实时汇率（open.er-api.com，免费无需 Key） |
+| POST | `/api/fx/refresh` | 抓取实时汇率并应用 |
 | GET | `/api/status-options` | 航班状态选项 |
 | GET/POST/DELETE | `/api/locations` | 位置共享（上报/删除/获取，自动清理过期） |
 | GET | `/api/health` | 健康检查 |
+
+### 汇率自动更新
+
+- 服务端启动 3 秒后自动抓取一次实时汇率（1 元 = ? 泰铢，来源 open.er-api.com，免费无需 Key），之后**每 6 小时**自动更新
+- 前端汇率组件提供 **↻ 刷新**按钮可随时手动抓取并应用
+- 抓取失败时自动沿用上次的汇率（不报错、不影响使用），汇率仍可手动修改
 
 ### 并发与冲突
 

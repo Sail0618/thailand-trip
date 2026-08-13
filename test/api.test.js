@@ -47,10 +47,11 @@ describe("泰国行程 API", () => {
     assert.equal(json.storage, "local");
   });
 
-  it("初始数据：8 段航班", async () => {
+  it("初始数据：8 段航班 + 默认汇率", async () => {
     const { json } = await api("GET", "/api/data");
     assert.equal(json.flights.length, 8);
     assert.ok(json.version >= 0);
+    assert.ok(json.fxRate > 0);
   });
 
   it("空 budgetCNY 保持为空（不再复活初始账单）", async () => {
@@ -130,6 +131,43 @@ describe("泰国行程 API", () => {
     fs.writeFileSync(STORE, JSON.stringify(raw));
     list = await api("GET", "/api/locations");
     assert.equal(list.json.length, 0);
+  });
+
+  it("汇率更新：成功 / 版本冲突 / 非法值", async () => {
+    const before = await api("GET", "/api/data");
+    const ok = await api("POST", "/api/fx", { rate: 5.2, version: before.json.version });
+    assert.equal(ok.status, 200);
+    const after = await api("GET", "/api/data");
+    assert.equal(after.json.fxRate, 5.2);
+
+    // 旧版本 → 409
+    const conflict = await api("POST", "/api/fx", { rate: 6, version: before.json.version });
+    assert.equal(conflict.status, 409);
+
+    // 非法值 → 400
+    const bad = await api("POST", "/api/fx", { rate: -1, version: after.json.version });
+    assert.equal(bad.status, 400);
+  });
+
+  it("实时汇率刷新（mock 外部 API）", async () => {
+    const before = await api("GET", "/api/data");
+    const realFetch = global.fetch;
+    // 只 mock 汇率 API，其他请求（localhost）走真实 fetch
+    global.fetch = async (url, opts) => {
+      if (String(url).includes("open.er-api.com")) {
+        return { ok: true, json: async () => ({ result: "success", provider: "mock", rates: { THB: 4.9 } }) };
+      }
+      return realFetch(url, opts);
+    };
+    try {
+      const res = await api("POST", "/api/fx/refresh", { version: before.json.version });
+      assert.equal(res.status, 200);
+      assert.equal(res.json.rate, 4.9);
+      const after = await api("GET", "/api/data");
+      assert.equal(after.json.fxRate, 4.9);
+    } finally {
+      global.fetch = realFetch;
+    }
   });
 
   it("预算新增/删除只影响当前币种", async () => {

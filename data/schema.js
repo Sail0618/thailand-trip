@@ -164,6 +164,9 @@ const initialData = {
   ],
   budgetTHB: [], // 泰铢账单独立表，暂空，可自行新增
 
+  // 汇率换算：1 元 = fxRate 泰铢（团内共享，可在线修改）
+  fxRate: 5,
+
   // 警告/冲突提示（已移除）
   alert: null,
 
