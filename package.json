@@ -1,0 +1,15 @@
+{
+  "name": "thailand-trip-shared",
+  "version": "1.0.0",
+  "description": "泰国11日行程 · 8人团在线共享编辑应用",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js"
+  },
+  "engines": {
+    "node": ">=18"
+  },
+  "dependencies": {
+    "express": "^4.19.2"
+  }
+}
