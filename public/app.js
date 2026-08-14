@@ -135,8 +135,9 @@ function renderComponents() {
 
     return `
       <div class="section component-card" data-comp="${escapeHtml(c.id)}">
-        <div class="section-header ${c.color} comp-header">
+        <div class="section-header ${c.color} comp-header" role="button" tabindex="0" aria-expanded="false" title="点击展开/收起">
           <span class="drag-handle" title="拖动排序" draggable="true">⋮⋮</span>
+          <span class="comp-chevron" aria-hidden="true">▸</span>
           ${escapeHtml(c.title)} <span class="section-hint">${escapeHtml(c.hint)}</span>
           <span class="comp-actions">
             ${c.addBtn ? `<button class="add-btn" id="${c.addBtn}" title="新增" aria-label="新增">＋ 新增</button>` : ""}
@@ -144,12 +145,40 @@ function renderComponents() {
             <button class="sort-btn" data-sort="down" title="下移" aria-label="下移">↓</button>
           </span>
         </div>
-        <div id="${bodyId}">${bodyContent}</div>
+        <div id="${bodyId}" class="comp-body">${bodyContent}</div>
       </div>`;
   }).join("");
 
   setupDragSort(container);
   setupSortButtons(container);
+  setupComponentToggle(container);
+}
+
+// ============================================================
+// 组件折叠：默认收起，点击标题栏展开/收起
+// ============================================================
+function setupComponentToggle(container) {
+  container.querySelectorAll(".comp-header").forEach((h) => {
+    const card = h.closest(".component-card");
+    const body = card ? card.querySelector(".comp-body") : null;
+    if (!body) return;
+    const toggle = (force) => {
+      const open = force !== undefined ? force : !body.classList.contains("open");
+      body.classList.toggle("open", open);
+      h.setAttribute("aria-expanded", open ? "true" : "false");
+    };
+    h.addEventListener("click", (e) => {
+      // 点击拖拽手柄 / 新增 / 排序按钮时不切换折叠
+      if (e.target.closest(".drag-handle, .add-btn, .sort-btn")) return;
+      toggle();
+    });
+    h.addEventListener("keydown", (e) => {
+      if (e.key === "Enter" || e.key === " ") {
+        e.preventDefault();
+        toggle();
+      }
+    });
+  });
 }
 
 // ============================================================

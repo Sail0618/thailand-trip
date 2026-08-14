@@ -82,6 +82,16 @@ input,select{font-family:inherit}
 .section-header .section-hint{font-size:.7em;font-weight:400;color:var(--text-3);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .comp-actions{margin-left:auto;display:flex;align-items:center;gap:8px;flex-shrink:0}
 .section-body{padding:16px 16px}
+/* ===== 组件折叠（默认收起，点击标题展开） ===== */
+.comp-header{cursor:pointer;user-select:none;-webkit-user-select:none}
+.comp-header:active{background:var(--hdr-tint,transparent)}
+.comp-chevron{flex-shrink:0;width:22px;height:22px;border-radius:50%;background:var(--bg);color:var(--text-2);display:flex;align-items:center;justify-content:center;font-size:.68em;line-height:1;transition:transform .25s,background .2s,color .2s}
+.comp-header[aria-expanded="true"] .comp-chevron{transform:rotate(90deg);background:rgba(15,118,110,.09);color:var(--primary,#0F766E)}
+.comp-body{display:none}
+.comp-body.open{display:block}
+.comp-body > .section-body{animation:compFade .25s ease}
+@keyframes compFade{from{opacity:0;transform:translateY(-4px)}to{opacity:1;transform:none}}
+
 
 /* 拖拽 */
 .component-card{transition:box-shadow .2s,transform .15s}
