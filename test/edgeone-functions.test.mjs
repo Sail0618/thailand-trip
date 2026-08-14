@@ -251,6 +251,25 @@ describe("EdgeOne Pages Functions", () => {
     assert.ok(hist.json.some((h) => h.data && h.data.flights && h.data.flights.length > 0));
   });
 
+  it("JSONBin 读取失败时抛错，绝不静默回退初始数据（防覆盖）", async () => {
+    kv = null;
+    const baseFetch = globalThis.fetch;
+    globalThis.fetch = async (url, opts) => {
+      if (String(url).includes("api.jsonbin.io")) return new Response("err", { status: 500 });
+      return baseFetch(url, opts);
+    };
+    const env = { JSONBIN_BIN_ID: "bin123", JSONBIN_API_KEY: "key123" };
+    try {
+      const got = await api("GET", "/api/data", undefined, env);
+      assert.equal(got.status, 500);
+      assert.ok(String(got.json && got.json.error || "").includes("读取失败"));
+      // 关键：绝不能静默返回初始数据（否则下一次保存会整包覆盖真实云数据）
+      assert.notEqual(got.json && got.json.error, undefined);
+    } finally {
+      globalThis.fetch = baseFetch;
+    }
+  });
+
   it("健康检查与未知接口", async () => {
     kv = new MockKV();
     const health = await api("GET", "/api/health");

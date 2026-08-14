@@ -188,12 +188,21 @@ async function load(kv, env) {
     }
     return normalize(data);
   }
-  // KV 未绑定 → JSONBin 直连回退；再不行用初始数据
+  // KV 未绑定 → JSONBin 直连存储
+  const binId = env && env.JSONBIN_BIN_ID;
+  const apiKey = env && env.JSONBIN_API_KEY;
+  if (!binId || !apiKey) {
+    // 未配置云存储：只能使用内置初始数据
+    return normalize(clone(initialData));
+  }
   try {
     const data = await jsonbinLoad(env);
     if (data) return normalize(data);
   } catch (e) {
-    console.error("JSONBin 读取失败，使用初始数据：" + (e && e.message));
+    console.error("JSONBin 读取失败：" + (e && e.message));
+    // 读取失败必须抛错，绝不能静默回退初始数据——
+    // 否则下一次保存会用初始数据整包覆盖真实云数据（曾导致丢数据）
+    throw new Error("数据读取失败，请稍后重试");
   }
   return normalize(clone(initialData));
 }

@@ -8,6 +8,143 @@
 // - 写操作携带 version 乐观锁，冲突(409)时自动刷新
 // ============================================================
 
+// ============================================================
+// 数据安全
+// - ?export=1：只读本地缓存导出页（不联网、不改缓存），数据找回用
+// - 服务器数据 version 比本地缓存旧时，保留本地缓存并提示一键恢复线上
+//   （防止服务器被旧快照覆盖后，客户端又用旧快照覆盖本机好数据）
+// ============================================================
+const EXPORT_MODE = new URLSearchParams(location.search).has("export");
+let restoreBannerShown = false;   // 恢复提示只弹一次
+let acceptServerOverride = false; // 用户点"暂不"后，接受服务器数据并恢复正常同步
+
+// 服务器数据是否应覆盖本地缓存
+// 判定"被回滚"：①服务器 version 低于缓存 ②缓存有退税小票/勾选待办但服务器没有（防旧快照覆盖）
+function freshShouldWin(cached, fresh) {
+  if (!cached) return true;
+  if (acceptServerOverride) return true;
+  if ((Number(fresh && fresh.version) || 0) < (Number(cached.version) || 0)) return false;
+  const cRecs = (cached.receipts || []).length;
+  const fRecs = (fresh && Array.isArray(fresh.receipts) ? fresh.receipts : []).length;
+  const cDone = (cached.todos || []).filter((t) => t.done).length;
+  const fDone = (fresh && Array.isArray(fresh.todos) ? fresh.todos : []).filter((t) => t.done).length;
+  if (cRecs > 0 && fRecs === 0) return false;
+  if (cDone > 0 && fDone === 0) return false;
+  return true;
+}
+
+function initExportPage() {
+  const cache = (() => { try { return localStorage.getItem("trip_data_cache_v1"); } catch (e) { return null; } })();
+  let parsed = null;
+  try { parsed = cache ? JSON.parse(cache) : null; } catch (e) { parsed = null; }
+  const esc = (v) => String(v ?? "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
+  const wrap = document.createElement("div");
+  wrap.style.cssText = "position:fixed;inset:0;z-index:99999;background:#F6F5F2;overflow:auto;padding:28px 16px calc(28px + env(safe-area-inset-bottom));font-family:-apple-system,BlinkMacSystemFont,'PingFang SC','Helvetica Neue',sans-serif;color:#1F2A27";
+  let html = `<div style="max-width:540px;margin:0 auto">
+    <h1 style="font-size:20px;margin:0 0 6px">📤 导出本地数据</h1>
+    <p style="font-size:13px;color:#6E7470;margin:0 0 18px;line-height:1.7">本页面<b>不会联网、不会修改你的缓存</b>，只把当前设备浏览器里保存的行程数据导出来。<br>如果你是在别的手机/电脑上使用过，请到那台设备打开本页面。</p>`;
+  if (!parsed) {
+    html += `<div style="background:#fff;border:1px solid #ECEAE5;border-radius:14px;padding:24px;text-align:center;color:#6E7470;font-size:14px;line-height:1.8">本机没有找到数据缓存。<br>（可能这台设备没打开过行程页，或缓存已被覆盖）</div>`;
+  } else {
+    const done = (parsed.todos || []).filter((t) => t.done).length;
+    const recs = (parsed.receipts || []).length;
+    html += `<div style="background:#fff;border:1px solid #ECEAE5;border-radius:14px;padding:16px;margin-bottom:12px;font-size:13px;line-height:2">
+      <div>📅 数据版本：<b>${esc(parsed.version)}</b> · 更新于 ${esc(parsed.lastUpdated || "—")}</div>
+      <div>✅ 已勾选待办：<b>${done}</b> 项</div>
+      <div>🧾 退税小票：<b>${recs}</b> 条</div>
+    </div>
+    <div style="display:flex;gap:10px;margin-bottom:14px">
+      <button id="exp-copy" style="flex:1;padding:13px;border:none;border-radius:12px;background:#0D7D6B;color:#fff;font-size:15px;font-weight:600">📋 复制 JSON</button>
+      <button id="exp-dl" style="flex:1;padding:13px;border:none;border-radius:12px;background:#1976D2;color:#fff;font-size:15px;font-weight:600">⬇️ 下载文件</button>
+    </div>
+    <pre style="background:#fff;border:1px solid #ECEAE5;border-radius:14px;padding:14px;font-size:11px;line-height:1.5;white-space:pre-wrap;word-break:break-all;max-height:48vh;overflow:auto">${esc(cache)}</pre>`;
+  }
+  html += `<p style="text-align:center;margin-top:18px;font-size:12px;color:#A6ABA8"><a href="/" style="color:#0F766E">← 返回行程主页</a></p></div>`;
+  wrap.innerHTML = html;
+  document.body.appendChild(wrap);
+  const copyBtn = document.getElementById("exp-copy");
+  const dlBtn = document.getElementById("exp-dl");
+  if (copyBtn && cache) {
+    copyBtn.addEventListener("click", async () => {
+      try { await navigator.clipboard.writeText(cache); }
+      catch (e) {
+        const ta = document.createElement("textarea");
+        ta.value = cache; ta.style.cssText = "position:fixed;top:-999px;opacity:0";
+        document.body.appendChild(ta); ta.select();
+        try { document.execCommand("copy"); } catch (e2) {}
+        document.body.removeChild(ta);
+      }
+      copyBtn.textContent = "✅ 已复制";
+    });
+  }
+  if (dlBtn && cache) {
+    dlBtn.addEventListener("click", () => {
+      const blob = new Blob([cache], { type: "application/json" });
+      const a = document.createElement("a");
+      a.href = URL.createObjectURL(blob);
+      a.download = "thailand-trip-cache.json";
+      a.click();
+      setTimeout(() => URL.revokeObjectURL(a.href), 1000);
+    });
+  }
+}
+
+// 服务器数据被旧快照覆盖时，提示用本机缓存恢复线上（需用户确认）
+function showRestoreBanner(cached, fresh) {
+  if (!cached || restoreBannerShown) return;
+  restoreBannerShown = true;
+  const done = (cached.todos || []).filter((t) => t.done).length;
+  const recs = (cached.receipts || []).length;
+  const bar = document.createElement("div");
+  bar.style.cssText = "position:fixed;left:0;right:0;bottom:0;z-index:998;background:#FFF8E1;border-top:1px solid #F0E0A0;padding:14px 16px calc(14px + env(safe-area-inset-bottom));box-shadow:0 -4px 16px rgba(0,0,0,.08)";
+  bar.innerHTML = `<div style="max-width:560px;margin:0 auto;font-size:13px;line-height:1.7">
+    <b>⚠️ 检测到本机缓存比线上新</b>（缓存 v${escapeHtml(cached.version)} · 线上 v${escapeHtml(fresh ? fresh.version : "?")}）<br>
+    缓存里还有 <b>${done}</b> 项勾选待办、<b>${recs}</b> 条小票，要<b>用本机数据恢复线上</b>吗？
+    <div style="display:flex;gap:10px;margin-top:10px">
+      <button id="rb-yes" style="flex:1;padding:11px;border:none;border-radius:10px;background:#0D7D6B;color:#fff;font-size:14px;font-weight:600">恢复线上数据</button>
+      <button id="rb-no" style="flex:1;padding:11px;border:none;border-radius:10px;background:#fff;color:#6E7470;font-size:14px;border:1px solid #E0DDD6">暂不</button>
+    </div></div>`;
+  document.body.appendChild(bar);
+  const close = () => bar.remove();
+  document.getElementById("rb-no").addEventListener("click", () => {
+    acceptServerOverride = true; // 用户选择不用本机覆盖：恢复正常同步
+    close();
+    poll();
+  });
+  document.getElementById("rb-yes").addEventListener("click", async () => {
+    document.getElementById("rb-yes").textContent = "恢复中…";
+    try {
+      const res = await fetch("/api/data", {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ ...cached, version: (fresh && fresh.version) })
+      });
+      if (res.ok) {
+        const j = await res.json().catch(() => ({}));
+        data = { ...cached, version: j.version || cached.version };
+        saveCache(data);
+        renderAll();
+        setSync("online", "✅ 已用本机数据恢复线上");
+        close();
+      } else if (res.status === 409) {
+        setSync("offline", "数据已被他人更新，正在刷新…");
+        close();
+        poll();
+      } else {
+        setSync("offline", "恢复失败，请重试");
+        const yesBtn = document.getElementById("rb-yes");
+        if (yesBtn) yesBtn.textContent = "重试恢复";
+      }
+    } catch (e) {
+      setSync("offline", "恢复失败，请重试");
+      const yesBtn = document.getElementById("rb-yes");
+      if (yesBtn) yesBtn.textContent = "重试恢复";
+    }
+  });
+}
+
+if (EXPORT_MODE) initExportPage();
+
 let data = null;               // 当前数据快照
 let editingFlightId = null;    // 正在编辑的航班 id
 let editingBudgetId = null;    // 正在编辑的预算 id
@@ -85,13 +222,21 @@ async function fetchData() {
     if (!res.ok) throw new Error("加载失败");
     const fresh = await res.json();
     const same = data && data.version === fresh.version && data.lastUpdated === fresh.lastUpdated;
-    data = fresh;
-    saveCache(fresh);
-    if (same) {
-      setSync("online", "实时同步中");
+    if (cached && !freshShouldWin(cached, fresh)) {
+      // 服务器数据比本地缓存旧（服务器被旧快照覆盖/回滚）：
+      // 保留本地缓存，避免把还带勾选状态/小票的数据覆盖掉，并提示可恢复
+      setSync("offline", "⚠️ 服务器数据较旧，已保留本机缓存");
+      if (cached) { data = cached; renderAll(); }
+      showRestoreBanner(cached, fresh);
     } else {
-      renderAll();
-      setSync("online", "实时同步中");
+      data = fresh;
+      saveCache(fresh);
+      if (same) {
+        setSync("online", "实时同步中");
+      } else {
+        renderAll();
+        setSync("online", "实时同步中");
+      }
     }
   } catch (e) {
     if (!data) {
@@ -1265,13 +1410,23 @@ async function poll() {
     const fresh = await res.json();
     const freshKey = JSON.stringify(fresh.lastUpdated) + "|" + (fresh.version || 0) + "|" + fresh.flights?.length;
     const curKey = JSON.stringify(data?.lastUpdated) + "|" + (data?.version || 0) + "|" + data?.flights?.length;
-    if (!data || freshKey !== curKey) {
+    const cachedNow = loadCache();
+    if (cachedNow && !freshShouldWin(cachedNow, fresh)) {
+      // 服务器较旧：保留本地缓存
+      setSync("offline", "⚠️ 服务器数据较旧，已保留本机缓存");
+      if (!data || (Number(data.version) || 0) < (Number(cachedNow.version) || 0)) {
+        data = cachedNow;
+        renderContent();
+      }
+    } else if (!data || freshKey !== curKey) {
       // 只更新内容，不重建骨架 → iframe 位置组件不闪烁、拖拽顺序不丢
       data = fresh;
       saveCache(fresh);
       renderContent();
+      setSync("online", "实时同步中");
+    } else {
+      setSync("online", "实时同步中");
     }
-    setSync("online", "实时同步中");
   } catch (e) {
     setSync("offline", "连接中断，重试中…");
   } finally {
@@ -1293,6 +1448,7 @@ function setSync(state, text) {
 // 事件绑定
 // ============================================================
 document.addEventListener("DOMContentLoaded", () => {
+  if (EXPORT_MODE) return; // 导出模式不启动正常应用（避免联网覆盖缓存）
   // 汇率换算：顶部按钮 → 弹窗
   $("btn-fx").addEventListener("click", () => {
     renderFx();
