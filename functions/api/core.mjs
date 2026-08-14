@@ -443,7 +443,8 @@ async function loadLocations(kv) {
   try {
     const store = await getBlobStore();
     if (!store) return [];
-    const raw = await store.get(LOCATIONS_BLOB_KEY, { type: "text" });
+    // 位置用强一致读取：确保自己刚上报的位置立刻可见（避免最终一致延迟）
+    const raw = await store.get(LOCATIONS_BLOB_KEY, { type: "text", consistency: "strong" });
     return raw ? JSON.parse(raw) : [];
   } catch (e) {
     return [];
