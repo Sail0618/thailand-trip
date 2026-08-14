@@ -137,13 +137,15 @@ function renderComponents() {
       <div class="section component-card" data-comp="${escapeHtml(c.id)}">
         <div class="section-header ${c.color} comp-header" role="button" tabindex="0" aria-expanded="false" title="点击展开/收起">
           <span class="drag-handle" title="拖动排序" draggable="true">⋮⋮</span>
-          <span class="comp-chevron" aria-hidden="true">▸</span>
-          ${escapeHtml(c.title)} <span class="section-hint">${escapeHtml(c.hint)}</span>
+          <span class="hdr-bar" aria-hidden="true"></span>
+          <span class="hdr-title">${escapeHtml(c.title)}</span>
+          <span class="section-hint">${escapeHtml(c.hint)}</span>
           <span class="comp-actions">
             ${c.addBtn ? `<button class="add-btn" id="${c.addBtn}" title="新增" aria-label="新增">＋ 新增</button>` : ""}
             <button class="sort-btn" data-sort="up" title="上移" aria-label="上移">↑</button>
             <button class="sort-btn" data-sort="down" title="下移" aria-label="下移">↓</button>
           </span>
+          <span class="comp-chevron" aria-hidden="true"></span>
         </div>
         <div id="${bodyId}" class="comp-body">${bodyContent}</div>
       </div>`;

@@ -22,14 +22,16 @@
   --gray-l:#F3F3F1;
 
   --radius:18px;
-  --shadow:0 1px 2px rgba(20,30,25,.04),0 6px 20px rgba(20,30,25,.05);
-  --shadow-lift:0 2px 6px rgba(20,30,25,.06),0 16px 40px rgba(20,30,25,.10);
+  --shadow:0 1px 1px rgba(20,30,25,.03),0 3px 8px rgba(20,30,25,.04),0 12px 28px rgba(20,30,25,.05);
+  --shadow-lift:0 2px 6px rgba(20,30,25,.06),0 18px 44px rgba(20,30,25,.11);
 }
 *{margin:0;padding:0;box-sizing:border-box}
 html{-webkit-text-size-adjust:100%}
 body{
   font-family:-apple-system,BlinkMacSystemFont,"PingFang SC","Helvetica Neue","Microsoft YaHei",sans-serif;
-  background:var(--bg);color:var(--text);line-height:1.6;
+  background:linear-gradient(180deg,#F8F7F4 0%,#F3F2EE 100%);
+  background-attachment:fixed;
+  color:var(--text);line-height:1.6;
   -webkit-tap-highlight-color:transparent;
   overscroll-behavior-y:contain;
   font-feature-settings:"tnum";
@@ -69,10 +71,11 @@ input,select{font-family:inherit}
 .container{max-width:960px;margin:0 auto;padding:14px 16px 64px}
 
 /* ============ 组件卡片 ============ */
-.section{background:var(--card);border-radius:var(--radius);box-shadow:var(--shadow);margin-bottom:18px;overflow:hidden}
-.section-header{display:flex;align-items:center;gap:10px;padding:16px 18px;font-weight:700;font-size:.98em;color:var(--text);border-bottom:1px solid var(--border);background:var(--hdr-tint,transparent)}
-/* 主标题统一元素：大圆点（颜色随组件主题色变化，形状一致） */
-/* 圆点已按需求移除，保留底色 --hdr-tint */
+.section{background:var(--card);border-radius:var(--radius);box-shadow:var(--shadow);margin-bottom:18px;overflow:hidden;border:1px solid rgba(20,30,25,.045)}
+.section-header{display:flex;align-items:center;gap:9px;padding:15px 18px;font-size:.98em;color:var(--text);border-bottom:1px solid var(--border);background:var(--hdr-tint,transparent)}
+/* 主标题统一元素：主题色竖条（线条感，与副标题小圆点区分层级） */
+.hdr-bar{width:4px;height:17px;border-radius:999px;background:var(--acc,#0F766E);flex-shrink:0}
+.hdr-title{font-weight:700;letter-spacing:.2px}
 .section-header.flight{--acc:#0F766E;--hdr-tint:rgba(15,118,110,.045)}
 .section-header.location{--acc:#2563EB;--hdr-tint:rgba(37,99,235,.045)}
 .section-header.tip{--acc:#B7791F;--hdr-tint:rgba(183,121,31,.045)}
@@ -82,11 +85,17 @@ input,select{font-family:inherit}
 .section-header .section-hint{font-size:.7em;font-weight:400;color:var(--text-3);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .comp-actions{margin-left:auto;display:flex;align-items:center;gap:8px;flex-shrink:0}
 .section-body{padding:16px 16px}
+.hint-note{font-size:.78em;color:var(--text-3);background:var(--bg);border:1px solid var(--border);border-radius:11px;padding:10px 13px;margin-top:12px;line-height:1.7}
 /* ===== 组件折叠（默认收起，点击标题展开） ===== */
-.comp-header{cursor:pointer;user-select:none;-webkit-user-select:none}
+.comp-header{cursor:pointer;user-select:none;-webkit-user-select:none;transition:background .18s}
+.comp-header:hover{background:var(--hdr-tint,transparent)}
 .comp-header:active{background:var(--hdr-tint,transparent)}
-.comp-chevron{flex-shrink:0;width:22px;height:22px;border-radius:50%;background:var(--bg);color:var(--text-2);display:flex;align-items:center;justify-content:center;font-size:.68em;line-height:1;transition:transform .25s,background .2s,color .2s}
-.comp-header[aria-expanded="true"] .comp-chevron{transform:rotate(90deg);background:rgba(15,118,110,.09);color:var(--primary,#0F766E)}
+/* 折叠时隐藏提示文字，减少标题行元素；展开后显示 */
+.comp-header:not([aria-expanded="true"]) .section-hint{display:none}
+.comp-chevron{flex-shrink:0;width:8px;height:8px;border-right:2px solid var(--text-3);border-bottom:2px solid var(--text-3);transform:rotate(-45deg);transition:transform .25s,border-color .2s;margin-right:4px}
+.comp-header[aria-expanded="true"] .comp-chevron{transform:rotate(45deg);border-color:var(--primary,#0F766E)}
+.comp-header[aria-expanded="true"] .hdr-bar{height:24px;transition:height .2s}
+.comp-header[aria-expanded="true"]{border-bottom-color:transparent}
 .comp-body{display:none}
 .comp-body.open{display:block}
 .comp-body > .section-body{animation:compFade .25s ease}
@@ -311,8 +320,9 @@ input,select{font-family:inherit}
   .toolbar{padding:10px 12px 0}
   .container{padding:12px 12px 52px}
   .section{margin-bottom:14px;border-radius:16px}
-  .section-header{padding:14px 14px;font-size:.94em}
-  .section-header .section-hint{display:none}
+  .section-header{padding:13px 14px;font-size:.93em;gap:8px}
+  .hdr-bar{width:3.5px;height:15px}
+  .comp-chevron{width:7px;height:7px;margin-right:2px}
   .section-body{padding:12px}
 
   .add-btn{padding:10px 14px;font-size:.78em;min-height:40px}
