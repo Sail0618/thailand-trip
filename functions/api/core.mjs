@@ -21,6 +21,8 @@ const STATUS_OPTIONS = ["已订", "待定", "已取消"];
 const DATA_KEY = "data";
 const HISTORY_KEY = "data_history";
 const HISTORY_LIMIT = 20; // 历史快照最多保留份数
+const LOCATIONS_KEY = "locations";          // 位置独立存储（KV key）
+const LOCATIONS_BLOB_KEY = "trip_locations"; // 位置独立存储（Blob key，无 KV 时用）
 const FX_KEY = "fx_live";
 const STALE_LOCATION_MS = 10 * 60 * 1000; // 10 分钟
 const FX_API_URL = "https://open.er-api.com/v6/latest/CNY";
@@ -432,6 +434,31 @@ async function blobCacheWrite(data) {
   } catch (e) { /* 缓存写入失败不影响主流程 */ }
 }
 
+// 位置独立读写：位置更新不 bump 主数据版本，避免所有在线客户端整页重渲染
+async function loadLocations(kv) {
+  if (kv) {
+    const raw = await kvGet(kv, LOCATIONS_KEY);
+    return Array.isArray(raw) ? raw : [];
+  }
+  try {
+    const store = await getBlobStore();
+    if (!store) return [];
+    const raw = await store.get(LOCATIONS_BLOB_KEY, { type: "text" });
+    return raw ? JSON.parse(raw) : [];
+  } catch (e) {
+    return [];
+  }
+}
+async function saveLocations(kv, list) {
+  if (kv) {
+    await kvPut(kv, LOCATIONS_KEY, list);
+    return;
+  }
+  const store = await getBlobStore();
+  if (!store) throw new Error("位置服务不可用");
+  await store.set(LOCATIONS_BLOB_KEY, JSON.stringify(list));
+}
+
 async function handleApi(method, pathname, query, body, kv, env, user) {
   const seg = pathname.split("/").filter(Boolean).map(safeDecode); // ["api", "data", ...]
 
@@ -825,10 +852,9 @@ async function handleApi(method, pathname, query, body, kv, env, user) {
 
   // /api/locations
   if (seg[1] === "locations" && seg.length === 2) {
-    const current = await load(kv, env);
     if (method === "GET") {
       const now = Date.now();
-      const list = (current.locations || []).filter((l) => now - (l.updatedAt || 0) < STALE_LOCATION_MS);
+      const list = (await loadLocations(kv)).filter((l) => now - (l.updatedAt || 0) < STALE_LOCATION_MS);
       return json(await withAddresses(kv, env, list));
     }
     if (method === "POST") {
@@ -840,26 +866,26 @@ async function handleApi(method, pathname, query, body, kv, env, user) {
       }
       const id = cleanStr(body && body.id, 100) ||
         "user_" + name.replace(/\s+/g, "_").slice(0, 30) + "_" + Math.random().toString(36).slice(2, 8);
-      const idx = current.locations.findIndex((l) => l.id === id);
+      const list = await loadLocations(kv);
+      const idx = list.findIndex((l) => l.id === id);
       const entry = {
         id, name, lat, lng,
         accuracy: isFinite(Number(body && body.accuracy)) ? Number(body.accuracy) : null,
         color: cleanStr(body && body.color, 20) || null,
         updatedAt: Date.now()
       };
-      if (idx === -1) current.locations.push(entry);
-      else current.locations[idx] = entry;
-      const saved = await commit(kv, env, current);
-      return json({ ok: true, id, version: saved.version });
+      if (idx === -1) list.push(entry);
+      else list[idx] = entry;
+      await saveLocations(kv, list); // 独立存储：不 bump 主数据版本
+      return json({ ok: true, id });
     }
     return json({ error: "不支持的方法" }, 405);
   }
   if (seg[1] === "locations" && seg.length === 3 && method === "DELETE") {
     const id = seg[2];
-    const current = await load(kv, env);
-    current.locations = current.locations.filter((l) => l.id !== id);
-    const saved = await commit(kv, env, current);
-    return json({ ok: true, version: saved.version });
+    const list = await loadLocations(kv);
+    await saveLocations(kv, list.filter((l) => l.id !== id));
+    return json({ ok: true });
   }
 
   return json({ error: "接口不存在" }, 404);

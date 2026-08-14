@@ -448,11 +448,18 @@ body.modal-open{overflow:hidden}
 /* ============ 左滑删除（通用） ============ */
 .swipe-row{position:relative;overflow:hidden;border-radius:inherit}
 .swipe-row .swipe-content{position:relative;background:var(--card,#fff);transition:transform .22s ease;touch-action:pan-y;z-index:2}
-.swipe-row .swipe-del{position:absolute;top:0;right:0;bottom:0;width:82px;border:none;background:#E85D4E;color:#fff;font-size:.88em;font-weight:700;font-family:inherit;cursor:pointer;z-index:1;display:flex;align-items:center;justify-content:center;letter-spacing:2px;border-radius:0}
-.swipe-row .swipe-del:active{background:#D14B3D}
+.swipe-row .swipe-del{position:absolute;top:0;right:0;bottom:0;width:82px;border:none;background:var(--card,#fff);color:#E85D4E;font-size:.88em;font-weight:700;font-family:inherit;cursor:pointer;z-index:1;display:flex;align-items:center;justify-content:center;letter-spacing:2px;border-left:1px solid var(--border,#ECEAE5);box-shadow:-2px 0 6px rgba(20,30,25,.04)}
+.swipe-row .swipe-del:active{background:var(--bg,#F6F5F2)}
 /* 列表内间距微调：左滑行之间留空隙避免误触 */
 .rc-list .swipe-row{margin-bottom:8px}
 .flight-list .swipe-row{margin-bottom:10px}
+
+/* ============ 通用确认弹窗 + 轻提示 Toast ============ */
+.confirm-body{padding:20px 8px 8px}
+.confirm-msg{margin:0;font-size:.95em;line-height:1.7;color:var(--text);text-align:center;word-break:break-word}
+.app-toast{position:fixed;left:50%;bottom:90px;transform:translateX(-50%) translateY(8px);background:rgba(20,30,25,.9);color:#fff;padding:10px 22px;border-radius:999px;font-size:.86em;z-index:99999;opacity:0;pointer-events:none;transition:opacity .2s,transform .2s;max-width:82vw;text-align:center;line-height:1.5}
+.app-toast.show{opacity:1;transform:translateX(-50%) translateY(0)}
+.app-toast.err{background:rgba(198,40,40,.92)}
 
 /* ============ 首次进入用户名门槛 ============ */
 .name-gate{position:fixed;inset:0;z-index:10000;background:linear-gradient(135deg,#0B6E99,#0D7D6B);display:flex;align-items:center;justify-content:center;padding:24px}

@@ -274,6 +274,22 @@
   <button class="lightbox-close" id="lightbox-close" title="关闭">✕</button>
 </div>
 
+<!-- 通用确认弹窗 -->
+<div class="modal-overlay" id="modal-confirm-overlay" style="display:none">
+  <div class="modal modal-sm">
+    <div class="modal-body confirm-body">
+      <p class="confirm-msg" id="confirm-msg"></p>
+    </div>
+    <div class="modal-footer">
+      <span style="flex:1"></span>
+      <button class="btn btn-outline" id="confirm-no">取消</button>
+      <button class="btn btn-danger" id="confirm-yes">确认</button>
+    </div>
+  </div>
+</div>
+
+<div class="app-toast" id="app-toast" role="status"></div>
+
 <script src="app.js"></script>
 </body>
 </html>

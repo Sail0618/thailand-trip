@@ -160,14 +160,18 @@ describe("EdgeOne Pages Functions", () => {
     assert.equal(refresh.json.rate, 5);
   });
 
-  it("位置共享：上报 → 查询 → 删除", async () => {
+  it("位置共享：上报 → 查询 → 删除（位置更新不 bump 主数据版本）", async () => {
     kv = new MockKV();
+    const before = await api("GET", "/api/data");
     const post = await api("POST", "/api/locations", { name: "小明", lat: 13.7, lng: 100.5 });
     assert.equal(post.status, 200);
     const { json: list } = await api("GET", "/api/locations");
     assert.equal(list.length, 1);
     assert.equal(list[0].name, "小明");
     assert.equal(list[0].address, "泰国 曼谷 哒叻裕区");
+    // 关键：位置写入不应 bump 主数据版本（否则所有客户端会整页重渲染）
+    const after = await api("GET", "/api/data");
+    assert.equal(after.json.version, before.json.version);
     const del = await api("DELETE", `/api/locations/${post.json.id}`);
     assert.equal(del.status, 200);
     const { json: list2 } = await api("GET", "/api/locations");

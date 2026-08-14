@@ -19,6 +19,9 @@ let shareInterval = null;   // 上传定时器
 let refreshInterval = null; // 拉取定时器
 let watcherId = null;       // 浏览器定位 watcher
 let lastPos = null;
+let lastUploadAt = 0;       // 上次实际上报时间（节流）
+let lastUploadedPos = null; // 上次上报的坐标（用于判断移动距离）
+let userPanned = false;     // 用户是否手动移动过地图（之后不再自动回中）
 
 // HTML 转义：名字/颜色等用户可写字段插入 innerHTML 前必须经过
 function escapeHtml(v) {
@@ -68,6 +71,8 @@ async function initMap() {
       map.setCenter([lastPos.lng, lastPos.lat]);
       map.setZoom(14);
     }
+    // 用户手动拖动地图后，不再自动回中到自己的位置
+    map.on("dragend", () => { userPanned = true; });
     setMapReady(true);
   } catch (e) {
     if (e.message === "NO_KEY") {
@@ -94,8 +99,24 @@ function setMapReady(ready) {
 // ============================================================
 // 位置上报
 // ============================================================
+// 两坐标距离（米，球面近似）
+function distMeters(a, b) {
+  if (!a || !b) return Infinity;
+  const R = 6371000;
+  const rad = (d) => (d * Math.PI) / 180;
+  const dLat = rad(b.lat - a.lat);
+  const dLng = rad(b.lng - a.lng);
+  const h = Math.sin(dLat / 2) ** 2 + Math.cos(rad(a.lat)) * Math.cos(rad(b.lat)) * Math.sin(dLng / 2) ** 2;
+  return 2 * R * Math.asin(Math.sqrt(h));
+}
+
 async function uploadPosition() {
   if (!lastPos) return;
+  // 节流：5 秒内且移动 < 30 米不上报（watchPosition 回调很频繁）
+  const moved = distMeters({ lat: lastPos.lat, lng: lastPos.lng }, lastUploadedPos || lastPos);
+  if (Date.now() - lastUploadAt < 5000 && moved < 30) return;
+  lastUploadedPos = { lat: lastPos.lat, lng: lastPos.lng };
+  lastUploadAt = Date.now();
   try {
     const res = await fetch("/api/locations", {
       method: "POST",
@@ -358,7 +379,7 @@ function startSharing() {
     return;
   }
   if (!("geolocation" in navigator)) {
-    alert("你的浏览器不支持定位功能");
+    showToast("你的浏览器不支持定位功能");
     return;
   }
   // 分配颜色（按名字 hash 稳定分配）
@@ -377,9 +398,12 @@ function startSharing() {
   // 持续监听定位（页面前台时更新）
   watcherId = navigator.geolocation.watchPosition(
     (pos) => {
-      lastPos = { lat: pos.coords.latitude, lng: pos.coords.longitude, accuracy: pos.coords.accuracy };
-      uploadPosition();
-      if (map) map.setCenter([lastPos.lng, lastPos.lat]);
+      const next = { lat: pos.coords.latitude, lng: pos.coords.longitude, accuracy: pos.coords.accuracy };
+      const moved = !lastPos || distMeters(lastPos, next) > 30; // 明显移动才算
+      lastPos = next;
+      if (moved) uploadPosition();
+      // 只有明显移动且用户没手动拖过地图时才回中，避免地图乱跳
+      if (map && moved && !userPanned) map.setCenter([lastPos.lng, lastPos.lat]);
     },
     (err) => {
       console.error("定位失败:", err);
@@ -389,7 +413,7 @@ function startSharing() {
   );
 
   // 定时上报（兜底，watchPosition 回调不稳定时）
-  shareInterval = setInterval(uploadPosition, 15000);
+  shareInterval = setInterval(() => uploadPosition(), 15000);
   // 定时拉取全员
   refreshInterval = setInterval(refreshMembers, 15000);
 }

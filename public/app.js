@@ -145,6 +145,17 @@ function showRestoreBanner(cached, fresh) {
 
 if (EXPORT_MODE) initExportPage();
 
+// 确认弹窗按钮（静态元素，直接绑定一次）
+document.addEventListener("DOMContentLoaded", () => {
+  $("confirm-yes").addEventListener("click", () => {
+    closeConfirmDialog();
+    const cb = confirmCallback; confirmCallback = null;
+    if (cb) cb();
+  });
+  $("confirm-no").addEventListener("click", closeConfirmDialog);
+  $("modal-confirm-overlay").addEventListener("click", (e) => { if (e.target === e.currentTarget) closeConfirmDialog(); });
+});
+
 // ============================================================
 // 全局用户名：首次进入输入一次，用于位置共享/退税小票等所有功能
 // ============================================================
@@ -180,38 +191,54 @@ function closeSwipeRow() {
 function setupSwipeRow(row, onDelete) {
   const content = row.querySelector(".swipe-content");
   if (!content) return row;
-  let startX = 0, startY = 0, dx = 0, dy = 0, active = false, moved = false;
+  let startX = 0, startY = 0, dx = 0, dy = 0, active = false, moved = false, wasOpen = false;
   row.addEventListener("pointerdown", (e) => {
-    if (row.classList.contains("swipe-open")) return; // 已打开：不重新滑动，交给点击关闭
+    wasOpen = row.classList.contains("swipe-open");
     startX = e.clientX; startY = e.clientY; dx = 0; dy = 0; active = true; moved = false;
   });
   row.addEventListener("pointermove", (e) => {
     if (!active) return;
     dx = e.clientX - startX; dy = e.clientY - startY;
     if (!moved && Math.abs(dx) < 8 && Math.abs(dy) < 8) return;
-    // 只处理明显的水平左滑，垂直滚动交给浏览器
-    if (Math.abs(dx) > Math.abs(dy) && dx < 0) {
+    if (Math.abs(dx) > Math.abs(dy)) {
       e.preventDefault();
       moved = true;
       content.style.transition = "none";
-      content.style.transform = `translateX(${Math.max(-82, dx)}px)`;
+      if (wasOpen) {
+        // 已打开：内容跟随手指（从 -82 开始），右滑可恢复，左滑保持打开
+        content.style.transform = `translateX(${Math.min(0, -82 + dx)}px)`;
+      } else if (dx < 0) {
+        // 未打开：只响应左滑
+        content.style.transform = `translateX(${Math.max(-82, dx)}px)`;
+      }
     }
   });
   const end = () => {
     if (!active) return;
     active = false;
     content.style.transition = "";
-    if (moved && dx < -45) {
+    // 吞掉本次滑动/关闭触发的 click，避免误开编辑/查看（删除按钮不受影响；超时自动解除）
+    const stop = (ev) => {
+      document.removeEventListener("click", stop, true);
+      if (ev.target && ev.target.closest && ev.target.closest(".swipe-del")) return; // 允许点删除
+      if (row.contains(ev.target)) { ev.stopPropagation(); ev.preventDefault(); }
+    };
+    if (wasOpen) {
+      if (moved && dx > 45) {
+        // 右滑 → 恢复原状
+        content.style.transform = "";
+        row.classList.remove("swipe-open");
+        if (swipeOpenRow === row) swipeOpenRow = null;
+        document.addEventListener("click", stop, true);
+        setTimeout(() => document.removeEventListener("click", stop, true), 400);
+      } else {
+        content.style.transform = "translateX(-82px)"; // 左滑/未动 → 保持打开
+      }
+    } else if (moved && dx < -45) {
       closeSwipeRow();
       content.style.transform = "translateX(-82px)";
       row.classList.add("swipe-open");
       swipeOpenRow = row;
-      // 吞掉本次滑动触发的 click，避免误开编辑/查看（删除按钮不受影响；超时自动解除）
-      const stop = (ev) => {
-        document.removeEventListener("click", stop, true);
-        if (ev.target && ev.target.closest && ev.target.closest(".swipe-del")) return; // 允许点删除
-        if (row.contains(ev.target)) { ev.stopPropagation(); ev.preventDefault(); }
-      };
       document.addEventListener("click", stop, true);
       setTimeout(() => document.removeEventListener("click", stop, true), 400);
     } else {
@@ -238,6 +265,46 @@ function setupSwipeRow(row, onDelete) {
   });
   return row;
 }
+// ============================================================
+// 通用确认弹窗 + 轻提示（替代原生 confirm/alert）
+// ============================================================
+let confirmCallback = null;
+function confirmDialog(message, onYes, opts) {
+  confirmCallback = onYes || null;
+  $("confirm-msg").textContent = message;
+  const yesBtn = $("confirm-yes");
+  yesBtn.textContent = (opts && opts.yesText) || "确认";
+  yesBtn.className = "btn " + (opts && opts.danger === false ? "btn-primary" : "btn-danger");
+  $("modal-confirm-overlay").style.display = "flex";
+}
+function closeConfirmDialog() {
+  $("modal-confirm-overlay").style.display = "none";
+  confirmCallback = null;
+}
+let toastTimer = null;
+function toast(msg, type) {
+  const el = $("app-toast");
+  if (!el) return;
+  el.textContent = msg;
+  el.className = "app-toast show" + (type === "err" ? " err" : "");
+  clearTimeout(toastTimer);
+  toastTimer = setTimeout(() => el.classList.remove("show"), 2000);
+}
+
+// 弹窗内按回车保存（textarea 不触发）
+function modalEnterToSave(overlayId, saveBtnId) {
+  const ov = $(overlayId);
+  if (!ov) return;
+  ov.addEventListener("keydown", (e) => {
+    const t = e.target;
+    if (e.key === "Enter" && t && t.tagName !== "TEXTAREA" && t.tagName !== "BUTTON") {
+      e.preventDefault();
+      const btn = $(saveBtnId);
+      if (btn) btn.click();
+    }
+  });
+}
+
 function getUserName() {
   try { return (localStorage.getItem(USER_KEY) || "").trim(); } catch (e) { return ""; }
 }
@@ -722,11 +789,11 @@ function renderFlights() {
       const card = row.querySelector(".flight-card");
       setupSwipeRow(row, () => {
         const id = card.dataset.id;
-        if (confirm("删除这段航班？")) {
+        confirmDialog("删除这段航班？", () => {
           data.flights = data.flights.filter((f) => f.id !== id);
           renderFlights();
           apiDelete(`/api/flights/${id}`);
-        }
+        });
       });
     });
   }
@@ -896,11 +963,12 @@ function saveDay() {
 
 function delDay() {
   if (!editingDayId) return;
-  if (!confirm("删除这一天？此操作不可恢复。")) return;
-  data.days = (data.days || []).filter((d) => d.id !== editingDayId);
-  renderDays();
-  apiDelete(`/api/days/${editingDayId}`);
-  closeDayModal();
+  confirmDialog("删除这一天？此操作不可恢复。", () => {
+    data.days = (data.days || []).filter((d) => d.id !== editingDayId);
+    renderDays();
+    apiDelete(`/api/days/${editingDayId}`);
+    closeDayModal();
+  });
 }
 
 // ============================================================
@@ -966,11 +1034,11 @@ function renderTodos() {
     const card = row.querySelector(".todo-item");
     setupSwipeRow(row, () => {
       const id = card.dataset.id;
-      if (confirm("删除这条待办？")) {
+      confirmDialog("删除这条待办？", () => {
         data.todos = data.todos.filter((t) => t.id !== id);
         renderTodos();
         apiDelete(`/api/todos/${id}`);
-      }
+      });
     });
   });
 }
@@ -1065,13 +1133,13 @@ function renderBudget() {
         const bill = row.querySelector(".bill-row");
         setupSwipeRow(row, () => {
           const id = bill.dataset.id;
-          if (confirm("删除该账单？")) {
+          confirmDialog("删除该账单？", () => {
             const listArr = type === "thb" ? data.budgetTHB : data.budgetCNY;
             const idx = listArr.findIndex((x) => x.id === id);
             if (idx >= 0) listArr.splice(idx, 1);
             renderBudget();
             apiDelete(`/api/budget/${type}/${id}`);
-          }
+          });
         });
       });
     }
@@ -1430,11 +1498,11 @@ function renderReceipts() {
     const card = row.querySelector(".rc-card");
     setupSwipeRow(row, () => {
       const id = card.dataset.id;
-      if (confirm("删除这张小票？")) {
+      confirmDialog("删除这张小票？", () => {
         data.receipts = (data.receipts || []).filter((r) => r.id !== id);
         renderReceipts();
         apiDelete(`/api/receipts/${id}`);
-      }
+      });
     });
   });
 }
@@ -1543,7 +1611,7 @@ async function saveReceipt() {
   if (pendingReceiptImage) {
     setSync("offline", "上传图片中…");
     const up = await uploadReceiptImage(pendingReceiptImage);
-    if (up.error) { setSync("offline", "图片上传失败"); alert("图片上传失败：" + up.error); return; }
+    if (up.error) { setSync("offline", "图片上传失败"); toast("图片上传失败：" + up.error, "err"); return; }
     form.imageKey = up.key;
     receiptImageKey = up.key;
   }
@@ -1645,9 +1713,17 @@ async function poll() {
     polling = false;
   }
 }
+let pollTimer = null;
 function setupPolling() {
-  poll();
-  setInterval(poll, 4000);
+  // fetchData 已做首次拉取，这里只起定时器；后台标签页暂停，切回再立即同步
+  pollTimer = setInterval(poll, 4000);
+  document.addEventListener("visibilitychange", () => {
+    if (document.visibilityState === "visible") {
+      poll();
+      if (pollTimer) clearInterval(pollTimer);
+      pollTimer = setInterval(poll, 4000);
+    }
+  });
 }
 
 function setSync(state, text) {
@@ -1760,12 +1836,12 @@ function bootApp() {
   $("btn-save-receipt").addEventListener("click", saveReceipt);
   $("btn-del-receipt").addEventListener("click", () => {
     if (!editingReceiptId) return;
-    if (confirm("删除这张小票？")) {
+    confirmDialog("删除这张小票？", () => {
       data.receipts = (data.receipts || []).filter((r) => r.id !== editingReceiptId);
       renderReceipts();
       apiDelete(`/api/receipts/${editingReceiptId}`);
       closeReceiptModal();
-    }
+    });
   });
   $("modal-receipt-overlay").addEventListener("click", (e) => { if (e.target === e.currentTarget) closeReceiptModal(); });
   // 选择照片 → 压缩 → 预览
@@ -1778,7 +1854,7 @@ function bootApp() {
       $("r-preview-img").src = dataUrl;
       $("r-preview").style.display = "flex";
     } catch (err) {
-      alert("图片处理失败，请换一张");
+      toast("图片处理失败，请换一张", "err");
     }
   });
   $("r-remove-img").addEventListener("click", () => {
@@ -1841,14 +1917,17 @@ function bootApp() {
     closeModal();
   });
   $("btn-del-flight").addEventListener("click", () => {
-    if (editingFlightId && confirm("删除这段航班？")) {
+    if (!editingFlightId) return;
+    confirmDialog("删除这段航班？", () => {
       data.flights = data.flights.filter((f) => f.id !== editingFlightId);
       renderFlights();
       apiDelete(`/api/flights/${editingFlightId}`);
       closeModal();
-    }
+    });
   });
 
+  modalEnterToSave("modal-todo-overlay", "btn-save-todo");
+  modalEnterToSave("modal-overlay", "btn-save-flight");
   $("btn-cancel-todo").addEventListener("click", closeModal);
   $("btn-save-todo").addEventListener("click", () => {
     const text = $("t-text").value.trim();
