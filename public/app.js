@@ -59,6 +59,7 @@ window.addEventListener("appinstalled", () => {
   toast("✅ 已安装到桌面");
 });
 $("btn-install").addEventListener("click", async () => {
+  const isIOS = /iphone|ipad|ipod/i.test(navigator.userAgent);
   if (deferredPrompt) {
     // 一键调用系统安装（Chrome/Android/Edge）
     try {
@@ -71,9 +72,12 @@ $("btn-install").addEventListener("click", async () => {
         toast("✅ 已安装到桌面");
       }
     } catch (e) { /* 用户取消或浏览器不支持 */ }
-  } else {
+  } else if (isIOS) {
     // iOS Safari：展示引导
     $("modal-install-overlay").style.display = "flex";
+  } else {
+    // 桌面端不支持一键安装：引导用手机打开
+    toast("请用手机 Safari 打开本站，再添加到主屏幕", "err");
   }
 });
 $("btn-install-close").addEventListener("click", () => { $("modal-install-overlay").style.display = "none"; });

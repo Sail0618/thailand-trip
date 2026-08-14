@@ -58,6 +58,9 @@ input,select{font-family:inherit}
 
 /* ============ 顶部状态条 ============ */
 .toolbar{max-width:960px;margin:0 auto;padding:12px 16px 0;display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap}
+.toolbar-right{display:flex;align-items:center;gap:8px;flex-wrap:wrap}
+.install-btn{color:#7A4DD0;background:#F3EDFF;border-color:rgba(122,77,208,.25)}
+.install-btn:hover{background:#EAE0FF}
 .fx-btn{display:inline-flex;align-items:center;gap:5px;font-size:.78em;font-weight:600;color:var(--primary);background:var(--primary-l);border:1px solid rgba(15,118,110,.2);padding:6px 14px;border-radius:999px;cursor:pointer;min-height:36px;transition:background .15s,transform .1s;touch-action:manipulation}
 .fx-btn:hover{background:#D8EFEA}
 .fx-btn:active{transform:scale(.96)}
