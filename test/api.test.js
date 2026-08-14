@@ -235,4 +235,36 @@ describe("泰国行程 API", () => {
     assert.ok(!afterDel.json.days.some((x) => x.id === add.json.id));
   });
 
+
+  it("退税小票：新增 / 更新 / 删除", async () => {
+    const before = await api("GET", "/api/data");
+
+    const add = await api("POST", "/api/receipts", {
+      version: before.json.version,
+      user: "小明", store: "Boots 药妆店", amount: 2500, refund: 125,
+      date: "2026-09-25", note: "退税单 A"
+    });
+    assert.equal(add.status, 200);
+    assert.ok(add.json.id);
+    const afterAdd = await api("GET", "/api/data");
+    const r = afterAdd.json.receipts.find((x) => x.id === add.json.id);
+    assert.ok(r);
+    assert.equal(r.user, "小明");
+    assert.equal(r.store, "Boots 药妆店");
+    assert.equal(r.amount, 2500);
+
+    const upd = await api("POST", `/api/receipts/${add.json.id}`, {
+      version: afterAdd.json.version, amount: 2600, note: "改一下"
+    });
+    assert.equal(upd.status, 200);
+    const afterUpd = await api("GET", "/api/data");
+    const r2 = afterUpd.json.receipts.find((x) => x.id === add.json.id);
+    assert.equal(r2.amount, 2600);
+
+    const del = await api("DELETE", `/api/receipts/${add.json.id}`);
+    assert.equal(del.status, 200);
+    const afterDel = await api("GET", "/api/data");
+    assert.ok(!afterDel.json.receipts.some((x) => x.id === add.json.id));
+  });
+
 });

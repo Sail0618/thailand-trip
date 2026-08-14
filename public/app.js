@@ -32,7 +32,8 @@ const COMPONENTS = [
   { id: "location",  title: "位置共享",    color: "location", hint: "授权后自动展示队友位置", order: 1 },
   { id: "days",      title: "每日行程",    color: "tip",     hint: "共 11 天 · 点击展开", order: 2 },
   { id: "todos",     title: "待办事项",    color: "alert",   hint: "点击勾选 · 多人同步", order: 3, addBtn: "btn-add-todo" },
-  { id: "budget",    title: "实际账单",    color: "budget",  hint: "¥ / ฿ 双币统计 · 点击修改", order: 4, addBtn: "btn-add-bill" }
+  { id: "budget",    title: "实际账单",    color: "budget",  hint: "¥ / ฿ 双币统计 · 点击修改", order: 4, addBtn: "btn-add-bill" },
+  { id: "receipts",  title: "退税小票",    color: "receipt",  hint: "拍照上传 · 按人分组", order: 5, addBtn: "btn-add-receipt" }
 ];
 
 const ORDER_KEY = "trip_comp_order"; // localStorage 存储拖拽顺序
@@ -79,6 +80,7 @@ function renderContent() {
   // 各编辑中的控件不重渲染，避免轮询打断输入
   if (!editingTodoDateId) renderTodos();
   if (!editingBudgetId) renderBudget();
+  if (!editingReceiptId) renderReceipts();
 }
 
 // ============================================================
@@ -104,9 +106,10 @@ function renderComponents() {
       case "location":
         bodyContent = `
           <div class="section-body" style="padding:0">
-            <iframe src="/location.html" class="loc-iframe" id="loc-iframe"
-              style="width:100%;border:none;border-radius:0 0 14px 14px"
+            <iframe data-src="/location.html" class="loc-iframe" id="loc-iframe"
+              style="width:100%;border:none;border-radius:0 0 14px 14px;background:var(--bg)"
               title="位置共享"></iframe>
+            <div class="loc-loading" id="loc-loading" style="text-align:center;padding:28px 16px;color:var(--text-3);font-size:.86em">📍 展开后自动加载位置共享 · 首次请允许定位</div>
           </div>`;
         break;
       case "days":
@@ -114,6 +117,9 @@ function renderComponents() {
         break;
       case "todos":
         bodyContent = `<div class="section-body"><div id="todos-container"></div></div>`;
+        break;
+      case "receipts":
+        bodyContent = `<div class="section-body"><div id="receipts-container"></div></div>`;
         break;
       case "budget":
         bodyContent = `
@@ -168,6 +174,12 @@ function setupComponentToggle(container) {
       const open = force !== undefined ? force : !body.classList.contains("open");
       body.classList.toggle("open", open);
       h.setAttribute("aria-expanded", open ? "true" : "false");
+      // 位置共享组件：展开时才加载 iframe（避免进入页面即请求定位）
+      if (open) {
+        const card = h.closest(".component-card");
+        const iframe = card && card.querySelector("iframe[data-src]");
+        if (iframe && !iframe.src) iframe.src = iframe.dataset.src;
+      }
     };
     h.addEventListener("click", (e) => {
       // 点击拖拽手柄 / 新增 / 排序按钮时不切换折叠
@@ -442,6 +454,11 @@ function renderDays() {
 // ============================================================
 let editingDayId = null;
 let dayColor = "#0F766E";
+
+// 退税小票编辑状态
+let editingReceiptId = null;
+let pendingReceiptImage = null;   // 待上传的压缩图片 dataURL
+let receiptImageKey = "";         // 当前小票已上传的图片 key
 const DAY_COLORS = ["#0F766E", "#2563EB", "#B7791F", "#D64545", "#7C3AED", "#E91E63", "#3F51B5", "#607D8B"];
 
 function openDayEditModal(id) {
@@ -924,6 +941,195 @@ function startBudgetEdit(type, id, td, field) {
 }
 
 // ============================================================
+// 退税小票
+// ============================================================
+const RC_COLORS = ["#0F766E", "#2563EB", "#B7791F", "#D64545", "#7C3AED", "#E91E63", "#3F51B5", "#C2185B"];
+function rcColor(name) {
+  let h = 0;
+  const str = String(name || "");
+  for (let i = 0; i < str.length; i++) h = (h * 31 + str.charCodeAt(i)) >>> 0;
+  return RC_COLORS[h % RC_COLORS.length];
+}
+function fmtMoney(v) {
+  const n = Number(v);
+  return isFinite(n) ? n.toLocaleString("zh-CN", { maximumFractionDigits: 2 }) : "0";
+}
+
+function receiptCard(r) {
+  const thumb = r.imageKey
+    ? `<img class="rc-thumb" src="/api/receipts/image?key=${encodeURIComponent(r.imageKey)}" alt="小票" loading="lazy">`
+    : "";
+  const refundTxt = Number(r.refund) > 0 ? ` · 💸 退税 ${escapeHtml(fmtMoney(r.refund))} ฿` : "";
+  return `<div class="rc-card" data-id="${escapeHtml(r.id)}">
+    ${thumb}
+    <div class="rc-main">
+      <div class="rc-store">${escapeHtml(r.store) || "未填写店名"}</div>
+      <div class="rc-meta">📅 ${escapeHtml(r.date || "—")} · 💰 ${escapeHtml(fmtMoney(r.amount))} ฿${refundTxt}</div>
+      ${r.note ? `<div class="rc-note">📝 ${escapeHtml(r.note)}</div>` : ""}
+    </div>
+    <span class="rc-actions">
+      <button class="btn-icon" data-act="edit-receipt" title="编辑">✏️</button>
+      <button class="btn-icon" data-act="del-receipt" title="删除">🗑️</button>
+    </span>
+  </div>`;
+}
+
+function renderReceipts() {
+  const container = $("receipts-container");
+  if (!container) return;
+  const list = data.receipts || [];
+  if (!list.length) {
+    container.innerHTML = `<div class="rc-empty">还没有退税小票，点上方「＋ 新增」拍照上传</div>`;
+    return;
+  }
+  // 按上传人分组（同名合并）
+  const groups = {};
+  list.forEach((r) => {
+    const u = r.user || "匿名";
+    (groups[u] = groups[u] || []).push(r);
+  });
+  const me = localStorage.getItem("trip_myname") || "";
+  const html = Object.keys(groups).map((user) => `
+    <div class="rc-group">
+      <div class="rc-group-title">
+        <span class="rc-dot" style="background:${rcColor(user)}"></span>
+        ${escapeHtml(user)}${user === me ? "（我）" : ""}
+        <span class="rc-count">${groups[user].length} 张</span>
+      </div>
+      ${groups[user].map(receiptCard).join("")}
+    </div>`).join("");
+  container.innerHTML = html;
+
+  // 编辑/删除（委托）
+  container.querySelectorAll('[data-act="edit-receipt"]').forEach((b) => {
+    b.addEventListener("click", (e) => { e.stopPropagation(); openReceiptModal(b.closest(".rc-card").dataset.id); });
+  });
+  container.querySelectorAll('[data-act="del-receipt"]').forEach((b) => {
+    b.addEventListener("click", (e) => {
+      e.stopPropagation();
+      const id = b.closest(".rc-card").dataset.id;
+      if (confirm("删除这张小票？")) {
+        data.receipts = (data.receipts || []).filter((r) => r.id !== id);
+        renderReceipts();
+        apiDelete(`/api/receipts/${id}`);
+      }
+    });
+  });
+}
+
+// 图片压缩：最长边 1000px，JPEG 0.65
+function compressImageFile(file) {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => {
+      const img = new Image();
+      img.onload = () => {
+        const scale = Math.min(1, 1000 / Math.max(img.width, img.height));
+        const canvas = document.createElement("canvas");
+        canvas.width = Math.max(1, Math.round(img.width * scale));
+        canvas.height = Math.max(1, Math.round(img.height * scale));
+        canvas.getContext("2d").drawImage(img, 0, 0, canvas.width, canvas.height);
+        resolve(canvas.toDataURL("image/jpeg", 0.65));
+      };
+      img.onerror = reject;
+      img.src = reader.result;
+    };
+    reader.onerror = reject;
+    reader.readAsDataURL(file);
+  });
+}
+
+// 上传图片：签发 URL → 直传 → 返回 key
+async function uploadReceiptImage(dataUrl) {
+  try {
+    const blob = await (await fetch(dataUrl)).blob();
+    const res = await fetch("/api/receipts/image-url", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ name: "receipt", contentType: "image/jpeg", ext: ".jpg" })
+    });
+    const json = await res.json();
+    if (!json.url) return { key: null, error: "图片服务不可用" };
+    const up = await fetch(json.url, {
+      method: "PUT",
+      body: blob,
+      headers: { "Content-Type": "image/jpeg" }
+    });
+    if (!up.ok) return { key: null, error: "图片上传失败" };
+    return { key: json.key, error: null };
+  } catch (e) {
+    return { key: null, error: "网络异常：" + e.message };
+  }
+}
+
+function openReceiptModal(id) {
+  editingReceiptId = id || null;
+  const r = id ? (data.receipts || []).find((x) => x.id === id) : null;
+  $("receipt-modal-title").textContent = r ? "编辑小票" : "新增小票";
+  const myName = localStorage.getItem("trip_myname") || "";
+  $("r-user").value = r ? (r.user || "") : myName;
+  $("r-store").value = r ? (r.store || "") : "";
+  $("r-amount").value = r ? (r.amount || 0) : 0;
+  $("r-refund").value = r ? (r.refund || 0) : 0;
+  $("r-date").value = r ? (r.date || "") : "";
+  $("r-note").value = r ? (r.note || "") : "";
+  receiptImageKey = r ? (r.imageKey || "") : "";
+  pendingReceiptImage = null;
+  $("r-image").value = "";
+  // 预览：已有图显示原图
+  if (receiptImageKey) {
+    $("r-preview-img").src = "/api/receipts/image?key=" + encodeURIComponent(receiptImageKey);
+    $("r-preview").style.display = "flex";
+  } else {
+    $("r-preview").style.display = "none";
+  }
+  $("btn-del-receipt").style.display = r ? "" : "none";
+  $("modal-receipt-overlay").style.display = "flex";
+}
+
+function closeReceiptModal() {
+  $("modal-receipt-overlay").style.display = "none";
+  editingReceiptId = null;
+  pendingReceiptImage = null;
+  receiptImageKey = "";
+}
+
+async function saveReceipt() {
+  const form = {
+    user: $("r-user").value.trim() || "匿名",
+    store: $("r-store").value.trim(),
+    amount: Number($("r-amount").value) || 0,
+    refund: Number($("r-refund").value) || 0,
+    date: $("r-date").value,
+    note: $("r-note").value.trim(),
+    imageKey: receiptImageKey,
+    version: data ? data.version : undefined
+  };
+  // 新选了图片 → 先上传拿 key
+  if (pendingReceiptImage) {
+    setSync("offline", "上传图片中…");
+    const up = await uploadReceiptImage(pendingReceiptImage);
+    if (up.error) { setSync("offline", "图片上传失败"); alert("图片上传失败：" + up.error); return; }
+    form.imageKey = up.key;
+    receiptImageKey = up.key;
+  }
+  if (editingReceiptId) {
+    const r = (data.receipts || []).find((x) => x.id === editingReceiptId);
+    if (r) Object.assign(r, { user: form.user, store: form.store, amount: form.amount, refund: form.refund, date: form.date, note: form.note, imageKey: form.imageKey });
+    renderReceipts();
+    apiPost(`/api/receipts/${editingReceiptId}`, form);
+  } else {
+    (data.receipts || (data.receipts = [])).push({
+      id: genId("r"), user: form.user, store: form.store, amount: form.amount,
+      refund: form.refund, date: form.date, note: form.note, imageKey: form.imageKey, createdAt: Date.now()
+    });
+    renderReceipts();
+    apiPost("/api/receipts", form);
+  }
+  closeReceiptModal();
+}
+
+// ============================================================
 // API 辅助（携带版本乐观锁；409 时自动刷新）
 // ============================================================
 async function apiPost(url, body) {
@@ -1036,6 +1242,39 @@ document.addEventListener("DOMContentLoaded", () => {
     }
   });
 
+  // 退税小票弹窗
+  $("btn-cancel-receipt").addEventListener("click", closeReceiptModal);
+  $("btn-save-receipt").addEventListener("click", saveReceipt);
+  $("btn-del-receipt").addEventListener("click", () => {
+    if (!editingReceiptId) return;
+    if (confirm("删除这张小票？")) {
+      data.receipts = (data.receipts || []).filter((r) => r.id !== editingReceiptId);
+      renderReceipts();
+      apiDelete(`/api/receipts/${editingReceiptId}`);
+      closeReceiptModal();
+    }
+  });
+  $("modal-receipt-overlay").addEventListener("click", (e) => { if (e.target === e.currentTarget) closeReceiptModal(); });
+  // 选择照片 → 压缩 → 预览
+  $("r-image").addEventListener("change", async (e) => {
+    const file = e.target.files && e.target.files[0];
+    if (!file) return;
+    try {
+      const dataUrl = await compressImageFile(file);
+      pendingReceiptImage = dataUrl;
+      $("r-preview-img").src = dataUrl;
+      $("r-preview").style.display = "flex";
+    } catch (err) {
+      alert("图片处理失败，请换一张");
+    }
+  });
+  $("r-remove-img").addEventListener("click", () => {
+    pendingReceiptImage = null;
+    receiptImageKey = "";
+    $("r-image").value = "";
+    $("r-preview").style.display = "none";
+  });
+
   // 每日行程：编辑某天 / 新增一天（委托）
   document.addEventListener("click", (e) => {
     const editBtn = e.target.closest("[data-edit-day]");
@@ -1051,7 +1290,7 @@ document.addEventListener("DOMContentLoaded", () => {
 
   // 新增按钮（动态渲染进组件头部）→ 用事件委托，不依赖渲染时机
   document.addEventListener("click", (e) => {
-    const addBtn = e.target.closest("#btn-add-flight, #btn-add-todo, #btn-add-bill");
+    const addBtn = e.target.closest("#btn-add-flight, #btn-add-todo, #btn-add-bill, #btn-add-receipt");
     if (!addBtn) return;
     if (addBtn.id === "btn-add-flight") openNewFlightModal();
     else if (addBtn.id === "btn-add-todo") {
@@ -1064,6 +1303,8 @@ document.addEventListener("DOMContentLoaded", () => {
       $("b-spend").value = 0;
       $("b-paid").value = 0;
       $("modal-bill-overlay").style.display = "flex";
+    } else if (addBtn.id === "btn-add-receipt") {
+      openReceiptModal(null);
     }
   });
 

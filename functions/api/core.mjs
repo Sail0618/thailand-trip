@@ -105,6 +105,7 @@ function normalize(data) {
   }
   if (!Array.isArray(data.budgetCNY)) data.budgetCNY = [];
   if (!Array.isArray(data.budgetTHB)) data.budgetTHB = [];
+  data.receipts = Array.isArray(data.receipts) ? data.receipts : [];
   delete data.budget;
 
   return data;
@@ -316,6 +317,22 @@ function safeDecode(s) {
   try { return decodeURIComponent(s); } catch (e) { return s; }
 }
 
+// EdgeOne Blob 图片存储（惰性加载；本地/测试环境不可用时返回 null）
+let _blobStorePromise = null;
+function getBlobStore() {
+  if (_blobStorePromise) return _blobStorePromise;
+  _blobStorePromise = (async () => {
+    try {
+      const sdk = await import("@edgeone/pages-blob");
+      return sdk.getStore("thailand-receipts");
+    } catch (e) {
+      console.error("Blob 不可用：" + (e && e.message));
+      return null;
+    }
+  })();
+  return _blobStorePromise;
+}
+
 async function handleApi(method, pathname, query, body, kv, env) {
   const seg = pathname.split("/").filter(Boolean).map(safeDecode); // ["api", "data", ...]
 
@@ -511,6 +528,93 @@ async function handleApi(method, pathname, query, body, kv, env) {
     current.days.push(day);
     const saved = await commit(kv, env, current);
     return json({ ok: true, id: day.id, version: saved.version });
+  }
+
+  // /api/receipts/image（读取小票图片）
+  if (seg[1] === "receipts" && seg[2] === "image" && seg.length === 3 && method === "GET") {
+    const store = await getBlobStore();
+    const key = query.get("key") || "";
+    if (!store || !key) return json({ error: "图片不存在" }, 404);
+    try {
+      const data = await store.get(key, { type: "blob" });
+      if (!data) return json({ error: "图片不存在" }, 404);
+      return new Response(data, {
+        headers: { "Content-Type": "image/jpeg", "Cache-Control": "public, max-age=86400" }
+      });
+    } catch (e) {
+      return json({ error: "图片读取失败" }, 500);
+    }
+  }
+
+  // /api/receipts/image-url（签发 Blob 预签名上传 URL）
+  if (seg[1] === "receipts" && seg[2] === "image-url" && seg.length === 3 && method === "POST") {
+    const store = await getBlobStore();
+    if (!store) return json({ error: "图片服务不可用" }, 503);
+    try {
+      const b = body || {};
+      const ext = /^\.[a-z0-9]{1,5}$/i.test(b.ext) ? b.ext : ".jpg";
+      const key = "receipts/" + Date.now().toString(36) + Math.random().toString(36).slice(2, 8) + ext;
+      const { url } = await store.createUploadUrl(key, {
+        contentType: "image/jpeg",
+        expireSeconds: 3600
+      });
+      return json({ url, key });
+    } catch (e) {
+      return json({ error: "签发上传地址失败：" + (e && e.message) }, 500);
+    }
+  }
+
+  // /api/receipts
+  if (seg[1] === "receipts" && seg.length === 2) {
+    const current = await load(kv, env);
+    if (method === "GET") return json(current.receipts || []);
+    if (method === "POST") {
+      assertVersion(current, expectedVersion(query, body));
+      const b = body || {};
+      const receipt = {
+        id: genId("r"),
+        user: cleanStr(b.user, 50) || "匿名",
+        store: cleanStr(b.store, 200),
+        amount: cleanNum(b.amount),
+        refund: cleanNum(b.refund),
+        date: cleanStr(b.date, 20),
+        note: cleanStr(b.note, 500),
+        imageKey: cleanStr(b.imageKey, 300),
+        createdAt: Date.now()
+      };
+      current.receipts.push(receipt);
+      const saved = await commit(kv, env, current);
+      return json({ ok: true, id: receipt.id, version: saved.version });
+    }
+    return json({ error: "不支持的方法" }, 405);
+  }
+
+  // /api/receipts/:id
+  if (seg[1] === "receipts" && seg.length === 3) {
+    const id = seg[2];
+    const current = await load(kv, env);
+    const idx = current.receipts.findIndex((r) => r.id === id);
+    if (method === "POST") {
+      if (idx === -1) return json({ error: "小票不存在" }, 404);
+      assertVersion(current, expectedVersion(query, body));
+      const patch = pickPatch(body, ["user", "store", "amount", "refund", "date", "note", "imageKey"]);
+      if ("user" in patch) patch.user = cleanStr(patch.user, 50) || "匿名";
+      if ("store" in patch) patch.store = cleanStr(patch.store, 200);
+      if ("amount" in patch) patch.amount = cleanNum(patch.amount);
+      if ("refund" in patch) patch.refund = cleanNum(patch.refund);
+      if ("date" in patch) patch.date = cleanStr(patch.date, 20);
+      if ("note" in patch) patch.note = cleanStr(patch.note, 500);
+      if ("imageKey" in patch) patch.imageKey = cleanStr(patch.imageKey, 300);
+      current.receipts[idx] = { ...current.receipts[idx], ...patch };
+      const saved = await commit(kv, env, current);
+      return json({ ok: true, version: saved.version });
+    }
+    if (method === "DELETE") {
+      current.receipts = current.receipts.filter((r) => r.id !== id);
+      const saved = await commit(kv, env, current);
+      return json({ ok: true, version: saved.version });
+    }
+    return json({ error: "不支持的方法" }, 405);
   }
 
   // /api/budget/:type

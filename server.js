@@ -292,6 +292,7 @@ function normalize(data) {
   }
   if (!Array.isArray(data.budgetCNY)) data.budgetCNY = [];
   if (!Array.isArray(data.budgetTHB)) data.budgetTHB = [];
+  data.receipts = Array.isArray(data.receipts) ? data.receipts : [];
   delete data.budget;
 
   return data;
@@ -556,6 +557,104 @@ app.delete("/api/days/:id", route(async (req, res) => {
   res.json({ ok: true, version: saved.version });
 }));
 
+// ------------------------------------------------------------
+// 路由：退税小票（按上传人分组；图片存本地目录或 EdgeOne Blob）
+// ------------------------------------------------------------
+const RECEIPTS_IMAGE_DIR = path.join(__dirname, "data", "receipts-images");
+
+// 小票列表
+app.post("/api/receipts/image-url", route(async (req, res) => {
+  const b = req.body || {};
+  const ext = /^\.[a-z0-9]{1,5}$/i.test(b.ext) ? b.ext : ".jpg";
+  const key = "receipts/" + Date.now().toString(36) + Math.random().toString(36).slice(2, 8) + ext;
+  res.json({ url: `/api/receipts/local-upload?key=${encodeURIComponent(key)}`, key });
+}));
+
+// 本地接收图片字节（生产环境走 EdgeOne Blob，此接口仅本地/自建用）
+app.put("/api/receipts/local-upload", async (req, res) => {
+  try {
+    await fsp.mkdir(RECEIPTS_IMAGE_DIR, { recursive: true });
+    const key = req.query.key || ("receipts/" + Date.now() + ".jpg");
+    const safeKey = path.basename(key);
+    const chunks = [];
+    for await (const c of req) chunks.push(c);
+    await fsp.writeFile(path.join(RECEIPTS_IMAGE_DIR, safeKey), Buffer.concat(chunks));
+    res.json({ ok: true, key });
+  } catch (e) {
+    res.status(500).json({ error: "图片保存失败：" + e.message });
+  }
+});
+
+// 读取本地图片
+app.get("/api/receipts/image", async (req, res) => {
+  try {
+    const safeKey = path.basename(req.query.key || "");
+    const file = path.join(RECEIPTS_IMAGE_DIR, safeKey);
+    const data = await fsp.readFile(file);
+    const ext = path.extname(safeKey).toLowerCase();
+    const type = ext === ".png" ? "image/png" : ext === ".gif" ? "image/gif" : "image/jpeg";
+    res.set("Content-Type", type);
+    res.set("Cache-Control", "public, max-age=86400");
+    res.send(data);
+  } catch (e) {
+    res.status(404).json({ error: "图片不存在" });
+  }
+});
+
+app.post("/api/receipts/:id", route(async (req, res) => {
+  const current = await getStore();
+  assertVersion(current, expectedVersion(req));
+  const idx = current.receipts.findIndex((r) => r.id === req.params.id);
+  if (idx === -1) return res.status(404).json({ error: "小票不存在" });
+  const patch = pickPatch(req.body, ["user", "store", "amount", "refund", "date", "note", "imageKey"]);
+  if ("user" in patch) patch.user = cleanStr(patch.user, 50) || "匿名";
+  if ("store" in patch) patch.store = cleanStr(patch.store, 200);
+  if ("amount" in patch) patch.amount = cleanNum(patch.amount);
+  if ("refund" in patch) patch.refund = cleanNum(patch.refund);
+  if ("date" in patch) patch.date = cleanStr(patch.date, 20);
+  if ("note" in patch) patch.note = cleanStr(patch.note, 500);
+  if ("imageKey" in patch) patch.imageKey = cleanStr(patch.imageKey, 300);
+  current.receipts[idx] = { ...current.receipts[idx], ...patch };
+  const saved = await commit(current);
+  res.json({ ok: true, version: saved.version });
+}));
+
+// 删除小票
+app.delete("/api/receipts/:id", route(async (req, res) => {
+  const current = await getStore();
+  current.receipts = current.receipts.filter((r) => r.id !== req.params.id);
+  const saved = await commit(current);
+  res.json({ ok: true, version: saved.version });
+}));
+
+// 签发图片上传 URL（本地：返回本地接收端点；生产 EdgeOne 用 Blob 预签名 URL）
+app.get("/api/receipts", route(async (req, res) => {
+  const data = await getStore();
+  res.json(data.receipts || []);
+}));
+
+// 新增小票
+app.post("/api/receipts", route(async (req, res) => {
+  const current = await getStore();
+  assertVersion(current, expectedVersion(req));
+  const b = req.body || {};
+  const receipt = {
+    id: "r" + Date.now().toString(36) + Math.random().toString(36).slice(2, 6),
+    user: cleanStr(b.user, 50) || "匿名",
+    store: cleanStr(b.store, 200),
+    amount: cleanNum(b.amount),
+    refund: cleanNum(b.refund),
+    date: cleanStr(b.date, 20),
+    note: cleanStr(b.note, 500),
+    imageKey: cleanStr(b.imageKey, 300),
+    createdAt: Date.now()
+  };
+  current.receipts.push(receipt);
+  const saved = await commit(current);
+  res.json({ ok: true, id: receipt.id, version: saved.version });
+}));
+
+// 更新小票
 // ------------------------------------------------------------
 // 路由：预算（¥ 人民币 / ฿ 泰铢 两套独立，互不影响）
 // ------------------------------------------------------------

@@ -81,6 +81,7 @@ input,select{font-family:inherit}
 .section-header.tip{--acc:#B7791F;--hdr-tint:rgba(183,121,31,.045)}
 .section-header.alert{--acc:#D64545;--hdr-tint:rgba(214,69,69,.045)}
 .section-header.budget{--acc:#9C6B3A;--hdr-tint:rgba(156,107,58,.045)}
+.section-header.receipt{--acc:#8E44AD;--hdr-tint:rgba(142,68,173,.05)}
 .section-header.fx{--acc:#7C3AED;--hdr-tint:rgba(124,58,237,.045)}
 .section-header .section-hint{font-size:.7em;font-weight:400;color:var(--text-3);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .comp-actions{margin-left:auto;display:flex;align-items:center;gap:8px;flex-shrink:0}
@@ -274,6 +275,24 @@ input,select{font-family:inherit}
 .di-del{position:absolute;top:10px;right:8px;padding:6px!important;font-size:.95em!important;opacity:.55}
 .di-del:hover{opacity:1}
 
+/* ============ 退税小票 ============ */
+.rc-empty{padding:20px;text-align:center;color:var(--text-3);font-size:.86em}
+.rc-group{margin-bottom:14px}
+.rc-group-title{display:flex;align-items:center;gap:8px;font-size:.84em;font-weight:700;color:var(--text);padding:4px 2px 8px}
+.rc-dot{width:9px;height:9px;border-radius:50%;flex-shrink:0}
+.rc-count{margin-left:auto;font-size:.72em;color:var(--text-3);font-weight:600;background:var(--bg);border:1px solid var(--border);padding:2px 9px;border-radius:999px}
+.rc-card{display:flex;align-items:flex-start;gap:12px;border:1px solid var(--border);border-radius:13px;padding:11px 12px;margin-bottom:8px;background:var(--card);box-shadow:var(--shadow)}
+.rc-thumb{width:58px;height:58px;border-radius:10px;object-fit:cover;flex-shrink:0;background:var(--bg);border:1px solid var(--border)}
+.rc-main{flex:1;min-width:0}
+.rc-store{font-size:.9em;font-weight:700;word-break:break-word}
+.rc-meta{font-size:.76em;color:var(--text-2);margin-top:3px;display:flex;flex-wrap:wrap;gap:3px 10px}
+.rc-note{font-size:.74em;color:var(--text-3);margin-top:3px;word-break:break-word}
+.rc-actions{display:flex;flex-direction:column;gap:2px;flex-shrink:0}
+.rc-actions .btn-icon{padding:6px!important}
+.rc-preview{display:flex;align-items:center;gap:10px;margin-top:8px;background:var(--bg);border:1px dashed var(--border-2);border-radius:12px;padding:10px}
+.rc-preview img{width:84px;height:84px;object-fit:cover;border-radius:9px}
+.rc-preview .btn-icon{padding:8px;font-size:.9em}
+
 /* ============ 汇率换算 ============ */
 .fx-rate-row{display:flex;align-items:center;gap:6px;padding:11px 12px;background:var(--bg);border:1px solid var(--border);border-radius:12px;font-size:.85em;flex-wrap:nowrap}
 .fx-rate-label{font-size:.76em;color:var(--text-2);font-weight:600;flex-shrink:0;white-space:nowrap}
@@ -373,6 +392,10 @@ input,select{font-family:inherit}
 
   /* 预算 */
   .br-nums{gap:14px}
+
+  /* 退税小票 */
+  .rc-card{padding:10px 11px;gap:10px}
+  .rc-thumb{width:52px;height:52px}
 
   /* 位置 iframe */
   .loc-iframe{height:56dvh;min-height:380px;max-height:540px}
