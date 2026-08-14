@@ -816,7 +816,10 @@ function setupDragSort(container) {
 // 顶部信息渲染
 // ============================================================
 function renderMeta() {
-  $("hero-title").textContent = data.meta?.title || "🇹🇭 泰国完整行程";
+  const rawTitle = data.meta?.title || "泰国完整行程";
+  // 去掉标题前导的 emoji（品牌 logo 已在 hero 展示）
+  const cleanTitle = String(rawTitle).replace(/^[\u{1F000}-\u{1FAFF}\u2600-\u27BF\uFE0F\s]+/u, "") || "泰国完整行程";
+  $("hero-title").textContent = cleanTitle;
   $("hero-sub").textContent = data.meta?.subtitle || "";
   $("meta-date").textContent = "📅 " + (data.meta?.dateRange || "");
   $("meta-group").textContent = "👥 " + (data.meta?.group || "");

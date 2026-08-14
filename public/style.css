@@ -70,6 +70,8 @@ input,select{font-family:inherit}
 .sync-status.offline .dot{background:var(--danger);box-shadow:0 0 0 3px var(--danger-l);animation:blink 1s infinite}
 @keyframes blink{50%{opacity:.35}}
 
+/* ============ Hero Logo ============ */
+.hero-logo{width:58px;height:58px;border-radius:14px;object-fit:cover;margin:0 auto 10px;display:block;box-shadow:0 4px 12px rgba(0,0,0,.18)}
 /* ============ 容器 ============ */
 .container{max-width:960px;margin:0 auto;padding:14px 16px 64px}
 
