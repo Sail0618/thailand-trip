@@ -445,6 +445,15 @@ body.modal-open{overflow:hidden}
 .chg-time{flex-shrink:0;font-size:.74em;color:var(--text-3);white-space:nowrap}
 .pwd-err{color:#C62828;font-size:.8em;margin-top:8px}
 
+/* ============ 左滑删除（通用） ============ */
+.swipe-row{position:relative;overflow:hidden;border-radius:inherit}
+.swipe-row .swipe-content{position:relative;background:var(--card,#fff);transition:transform .22s ease;touch-action:pan-y;z-index:2}
+.swipe-row .swipe-del{position:absolute;top:0;right:0;bottom:0;width:82px;border:none;background:#E85D4E;color:#fff;font-size:.88em;font-weight:700;font-family:inherit;cursor:pointer;z-index:1;display:flex;align-items:center;justify-content:center;letter-spacing:2px;border-radius:0}
+.swipe-row .swipe-del:active{background:#D14B3D}
+/* 列表内间距微调：左滑行之间留空隙避免误触 */
+.rc-list .swipe-row{margin-bottom:8px}
+.flight-list .swipe-row{margin-bottom:10px}
+
 /* ============ 首次进入用户名门槛 ============ */
 .name-gate{position:fixed;inset:0;z-index:10000;background:linear-gradient(135deg,#0B6E99,#0D7D6B);display:flex;align-items:center;justify-content:center;padding:24px}
 .name-gate-card{background:#fff;border-radius:20px;padding:28px 22px;width:100%;max-width:360px;box-shadow:0 12px 40px rgba(0,0,0,.2);text-align:center}

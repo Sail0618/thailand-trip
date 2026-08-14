@@ -162,6 +162,82 @@ async function sha256hex(str) {
     return String(str); // 非 https/不支持时退化为原文比较
   }
 }
+
+// ============================================================
+// 左滑删除（通用助手）
+// - setupSwipeRow(row, onDelete)：左滑露出红色删除按钮，点删除执行 onDelete
+// - 同一时间只允许一行处于打开状态；已打开时点击行内任意位置先关闭
+// ============================================================
+let swipeOpenRow = null;
+function closeSwipeRow() {
+  if (swipeOpenRow) {
+    const c = swipeOpenRow.querySelector(".swipe-content");
+    if (c) c.style.transform = "";
+    swipeOpenRow.classList.remove("swipe-open");
+    swipeOpenRow = null;
+  }
+}
+function setupSwipeRow(row, onDelete) {
+  const content = row.querySelector(".swipe-content");
+  if (!content) return row;
+  let startX = 0, startY = 0, dx = 0, dy = 0, active = false, moved = false;
+  row.addEventListener("pointerdown", (e) => {
+    if (row.classList.contains("swipe-open")) return; // 已打开：不重新滑动，交给点击关闭
+    startX = e.clientX; startY = e.clientY; dx = 0; dy = 0; active = true; moved = false;
+  });
+  row.addEventListener("pointermove", (e) => {
+    if (!active) return;
+    dx = e.clientX - startX; dy = e.clientY - startY;
+    if (!moved && Math.abs(dx) < 8 && Math.abs(dy) < 8) return;
+    // 只处理明显的水平左滑，垂直滚动交给浏览器
+    if (Math.abs(dx) > Math.abs(dy) && dx < 0) {
+      e.preventDefault();
+      moved = true;
+      content.style.transition = "none";
+      content.style.transform = `translateX(${Math.max(-82, dx)}px)`;
+    }
+  });
+  const end = () => {
+    if (!active) return;
+    active = false;
+    content.style.transition = "";
+    if (moved && dx < -45) {
+      closeSwipeRow();
+      content.style.transform = "translateX(-82px)";
+      row.classList.add("swipe-open");
+      swipeOpenRow = row;
+      // 吞掉本次滑动触发的 click，避免误开编辑/查看（删除按钮不受影响；超时自动解除）
+      const stop = (ev) => {
+        document.removeEventListener("click", stop, true);
+        if (ev.target && ev.target.closest && ev.target.closest(".swipe-del")) return; // 允许点删除
+        if (row.contains(ev.target)) { ev.stopPropagation(); ev.preventDefault(); }
+      };
+      document.addEventListener("click", stop, true);
+      setTimeout(() => document.removeEventListener("click", stop, true), 400);
+    } else {
+      content.style.transform = "";
+      row.classList.remove("swipe-open");
+      if (swipeOpenRow === row) swipeOpenRow = null;
+    }
+  };
+  row.addEventListener("pointerup", end);
+  row.addEventListener("pointercancel", end);
+  // 已打开时：点击行内先关闭，不再触发行内其它操作
+  row.addEventListener("click", (e) => {
+    if (row.classList.contains("swipe-open")) {
+      closeSwipeRow();
+      e.stopPropagation();
+      e.preventDefault();
+    }
+  });
+  const del = row.querySelector(".swipe-del");
+  if (del) del.addEventListener("click", (e) => {
+    e.stopPropagation();
+    e.preventDefault();
+    if (onDelete) onDelete();
+  });
+  return row;
+}
 function getUserName() {
   try { return (localStorage.getItem(USER_KEY) || "").trim(); } catch (e) { return ""; }
 }
@@ -376,7 +452,7 @@ function renderComponents() {
               <div class="bill-totals" id="budget-totals-thb"></div>
             </div>
           </div>
-          <p class="hint-note">💡 ¥ 与 ฿ 分开独立统计，互不折算。点击金额即可修改；「实收 − 支出」为结余。删除按钮 🗑️ 只删除当前币种下的该条记录。</p>`;
+          <p class="hint-note">💡 ¥ 与 ฿ 分开独立统计，互不折算。点击金额即可修改；「实收 − 支出」为结余。左滑账单可删除。</p>`;
         break;
     }
 
@@ -605,29 +681,31 @@ function renderFlights() {
     const depTxt = f.dep && f.dep !== "待定" ? escapeHtml(f.dep) : null;
     const arrTxt = f.arr && f.arr !== "待定" ? escapeHtml(f.arr) : null;
     return `
-      <div class="flight-card ${cls}" data-id="${escapeHtml(f.id)}">
-        <div class="fc-top">
-          <span class="fc-no ${hasNo ? "" : "empty"}">✈ ${hasNo ? escapeHtml(f.flightNo) : "—"}</span>
-          <span class="fc-right">
-            <span class="status-pill ${cls}">${escapeHtml(f.status || "待定")}</span>
-            <span class="fc-actions">
-              <button class="btn-icon" data-act="edit" title="编辑">✏️</button>
-              <button class="btn-icon" data-act="del" title="删除">🗑️</button>
+      <div class="swipe-row">
+        <button class="swipe-del" type="button">删除</button>
+        <div class="swipe-content flight-card ${cls}" data-id="${escapeHtml(f.id)}">
+          <div class="fc-top">
+            <span class="fc-no ${hasNo ? "" : "empty"}">✈ ${hasNo ? escapeHtml(f.flightNo) : "—"}</span>
+            <span class="fc-right">
+              <span class="status-pill ${cls}">${escapeHtml(f.status || "待定")}</span>
+              <span class="fc-actions">
+                <button class="btn-icon" data-act="edit" title="编辑">✏️</button>
+              </span>
             </span>
-          </span>
-        </div>
-        <div class="fc-times">
-          <span class="fc-time ${depTxt ? "" : "pending"}">${depTxt || "待定"}</span>
-          <span class="fc-track">
-            <span class="fc-dur">${dur ? escapeHtml(dur) : "—"}</span>
-            <span class="fc-line"></span>
-          </span>
-          <span class="fc-time ${arrTxt ? "" : "pending"}">${arrTxt || "待定"}</span>
-        </div>
-        <div class="fc-route">${dash(f.route)}</div>
-        <div class="fc-meta">
-          <span>📅 ${dash(f.date)}</span>
-          ${f.note ? `<span class="fc-note">${escapeHtml(f.note)}</span>` : ""}
+          </div>
+          <div class="fc-times">
+            <span class="fc-time ${depTxt ? "" : "pending"}">${depTxt || "待定"}</span>
+            <span class="fc-track">
+              <span class="fc-dur">${dur ? escapeHtml(dur) : "—"}</span>
+              <span class="fc-line"></span>
+            </span>
+            <span class="fc-time ${arrTxt ? "" : "pending"}">${arrTxt || "待定"}</span>
+          </div>
+          <div class="fc-route">${dash(f.route)}</div>
+          <div class="fc-meta">
+            <span>📅 ${dash(f.date)}</span>
+            ${f.note ? `<span class="fc-note">${escapeHtml(f.note)}</span>` : ""}
+          </div>
         </div>
       </div>`;
   }).join("");
@@ -639,6 +717,18 @@ function renderFlights() {
       <div class="fc-add-row" id="fc-add-row">＋ 新增航班</div>`;
     const addRow = $("fc-add-row");
     if (addRow) addRow.addEventListener("click", openNewFlightModal);
+    // 左滑删除航班
+    list.querySelectorAll(".swipe-row").forEach((row) => {
+      const card = row.querySelector(".flight-card");
+      setupSwipeRow(row, () => {
+        const id = card.dataset.id;
+        if (confirm("删除这段航班？")) {
+          data.flights = data.flights.filter((f) => f.id !== id);
+          renderFlights();
+          apiDelete(`/api/flights/${id}`);
+        }
+      });
+    });
   }
 }
 
@@ -742,16 +832,19 @@ function renderDayColors() {
 function addDayItemRow(item) {
   const wrap = $("d-items");
   const row = document.createElement("div");
-  row.className = "di-item";
+  row.className = "swipe-row";
   row.innerHTML = `
-    <div class="di-grid">
-      <input class="di-dot" value="${escapeHtml((item && item.dot) || "")}" placeholder="图标" maxlength="4">
-      <input class="di-time" value="${escapeHtml((item && item.time) || "")}" placeholder="时间，如 08:00 → 10:00">
-    </div>
-    <input class="di-title" value="${escapeHtml((item && item.title) || "")}" placeholder="事项标题">
-    <textarea class="di-desc" rows="2" placeholder="描述，每行一条">${escapeHtml((item && item.desc || []).join("\n"))}</textarea>
-    <button type="button" class="btn-icon di-del" title="删除该项">🗑️</button>`;
-  row.querySelector(".di-del").addEventListener("click", () => row.remove());
+    <button class="swipe-del" type="button">删除</button>
+    <div class="swipe-content di-item">
+      <div class="di-grid">
+        <input class="di-dot" value="${escapeHtml((item && item.dot) || "")}" placeholder="图标" maxlength="4">
+        <input class="di-time" value="${escapeHtml((item && item.time) || "")}" placeholder="时间，如 08:00 → 10:00">
+      </div>
+      <input class="di-title" value="${escapeHtml((item && item.title) || "")}" placeholder="事项标题">
+      <textarea class="di-desc" rows="2" placeholder="描述，每行一条">${escapeHtml((item && item.desc || []).join("\n"))}</textarea>
+    </div>`;
+  // 左滑删除该项（删除后保存时才生效）
+  setupSwipeRow(row, () => row.remove());
   wrap.appendChild(row);
 }
 
@@ -830,16 +923,18 @@ function renderTodos() {
     (a, b) => todoSortKey(a) - todoSortKey(b) || String(a.text || "").localeCompare(String(b.text || ""), "zh")
   );
   container.innerHTML = `<div class="todos-list">` + sorted.map((t) => `
-    <div class="todo-item ${t.done ? "done" : ""}" data-id="${escapeHtml(t.id)}" title="点击编辑待办">
-      <div class="checkbox" data-act="toggle-todo">✓</div>
-      <div class="todo-main">
-        <div class="txt">${escapeHtml(t.text)}</div>
-        <div class="todo-meta">
-          <span class="cat" style="background:${CAT_COLOR[t.category] || CAT_COLOR["其他"]}">${escapeHtml(t.category)}</span>
-          <span class="todo-date" data-edit-date title="点击设置日期">${t.date ? escapeHtml(fmtDate(t.date)) : "＋日期"}</span>
+    <div class="swipe-row">
+      <button class="swipe-del" type="button">删除</button>
+      <div class="swipe-content todo-item ${t.done ? "done" : ""}" data-id="${escapeHtml(t.id)}" title="点击编辑待办">
+        <div class="checkbox" data-act="toggle-todo">✓</div>
+        <div class="todo-main">
+          <div class="txt">${escapeHtml(t.text)}</div>
+          <div class="todo-meta">
+            <span class="cat" style="background:${CAT_COLOR[t.category] || CAT_COLOR["其他"]}">${escapeHtml(t.category)}</span>
+            <span class="todo-date" data-edit-date title="点击设置日期">${t.date ? escapeHtml(fmtDate(t.date)) : "＋日期"}</span>
+          </div>
         </div>
       </div>
-      <button class="btn-icon" data-act="del-todo" title="删除">🗑️</button>
     </div>`).join("") + `</div>`;
 
   container.querySelectorAll(".todo-item").forEach((item) => {
@@ -856,24 +951,26 @@ function renderTodos() {
     });
     // 点击卡片主体：打开编辑弹窗
     item.addEventListener("click", (e) => {
-      if (e.target.closest('[data-act="del-todo"]')) return;
       if (e.target.closest('[data-act="toggle-todo"]')) return;
       if (e.target.closest('[data-edit-date]')) return; // 日期点击单独处理
       openTodoModal(id);
-    });
-    const delBtn = item.querySelector('[data-act="del-todo"]');
-    if (delBtn) delBtn.addEventListener("click", (e) => {
-      e.stopPropagation();
-      if (confirm("删除这条待办？")) {
-        data.todos = data.todos.filter((t) => t.id !== id);
-        renderTodos();
-        apiDelete(`/api/todos/${id}`);
-      }
     });
     const dateEl = item.querySelector('[data-edit-date]');
     if (dateEl) dateEl.addEventListener("click", (e) => {
       e.stopPropagation();
       startTodoDateEdit(id, dateEl);
+    });
+  });
+  // 左滑删除待办
+  container.querySelectorAll(".swipe-row").forEach((row) => {
+    const card = row.querySelector(".todo-item");
+    setupSwipeRow(row, () => {
+      const id = card.dataset.id;
+      if (confirm("删除这条待办？")) {
+        data.todos = data.todos.filter((t) => t.id !== id);
+        renderTodos();
+        apiDelete(`/api/todos/${id}`);
+      }
     });
   });
 }
@@ -949,17 +1046,34 @@ function renderBudget() {
     if (!items_.length) {
       listEl.innerHTML = `<div class="bills-empty">暂无账单，点组件右上角 ＋ 新增</div>`;
     } else {
+      const type = sym === "฿" ? "thb" : "cny";
       listEl.innerHTML = items_.map((b) => `
-        <div class="bill-row" data-id="${escapeHtml(b.id)}">
-          <div class="br-main">
-            <div class="br-item">${escapeHtml(b.item)}${b.detail ? `<span class="br-detail"> · ${escapeHtml(b.detail)}</span>` : ""}</div>
-            <div class="br-nums">
-              <div class="br-num"><label>支出</label><span class="editable" data-field="spend" data-act="edit-budget">${fmtMoney(b.spend, sym)}</span></div>
-              <div class="br-num"><label>实收</label><span class="editable" data-field="paid" data-act="edit-budget">${fmtMoney(b.paid, sym)}</span></div>
+        <div class="swipe-row">
+          <button class="swipe-del" type="button">删除</button>
+          <div class="swipe-content bill-row" data-id="${escapeHtml(b.id)}">
+            <div class="br-main">
+              <div class="br-item">${escapeHtml(b.item)}${b.detail ? `<span class="br-detail"> · ${escapeHtml(b.detail)}</span>` : ""}</div>
+              <div class="br-nums">
+                <div class="br-num"><label>支出</label><span class="editable" data-field="spend" data-act="edit-budget">${fmtMoney(b.spend, sym)}</span></div>
+                <div class="br-num"><label>实收</label><span class="editable" data-field="paid" data-act="edit-budget">${fmtMoney(b.paid, sym)}</span></div>
+              </div>
             </div>
           </div>
-          <button class="btn-icon" data-act="del-bill" title="删除该账单">🗑️</button>
         </div>`).join("");
+      // 左滑删除账单
+      listEl.querySelectorAll(".swipe-row").forEach((row) => {
+        const bill = row.querySelector(".bill-row");
+        setupSwipeRow(row, () => {
+          const id = bill.dataset.id;
+          if (confirm("删除该账单？")) {
+            const listArr = type === "thb" ? data.budgetTHB : data.budgetCNY;
+            const idx = listArr.findIndex((x) => x.id === id);
+            if (idx >= 0) listArr.splice(idx, 1);
+            renderBudget();
+            apiDelete(`/api/budget/${type}/${id}`);
+          }
+        });
+      });
     }
 
     if (totalEl) {
@@ -1252,17 +1366,19 @@ function receiptCard(r, showUser) {
   const userTag = showUser
     ? `<span class="rc-user"><i style="background:${rcColor(r.user)}"></i>${escapeHtml(r.user || "匿名")}</span>`
     : "";
-  return `<div class="rc-card" data-id="${escapeHtml(r.id)}">
-    ${thumb}
-    <div class="rc-main">
-      <div class="rc-store">${escapeHtml(r.store) || "未填写店名"}</div>
-      <div class="rc-meta">📅 ${escapeHtml(r.date || "—")} · 💰 ${escapeHtml(fmtMoney(r.amount))} ฿${refundTxt}${userTag}</div>
-      ${r.note ? `<div class="rc-note">📝 ${escapeHtml(r.note)}</div>` : ""}
+  return `<div class="swipe-row">
+    <button class="swipe-del" type="button">删除</button>
+    <div class="swipe-content rc-card" data-id="${escapeHtml(r.id)}">
+      ${thumb}
+      <div class="rc-main">
+        <div class="rc-store">${escapeHtml(r.store) || "未填写店名"}</div>
+        <div class="rc-meta">📅 ${escapeHtml(r.date || "—")} · 💰 ${escapeHtml(fmtMoney(r.amount))} ฿${refundTxt}${userTag}</div>
+        ${r.note ? `<div class="rc-note">📝 ${escapeHtml(r.note)}</div>` : ""}
+      </div>
+      <span class="rc-actions">
+        <button class="btn-icon" data-act="edit-receipt" title="编辑">✏️</button>
+      </span>
     </div>
-    <span class="rc-actions">
-      <button class="btn-icon" data-act="edit-receipt" title="编辑">✏️</button>
-      <button class="btn-icon" data-act="del-receipt" title="删除">🗑️</button>
-    </span>
   </div>`;
 }
 
@@ -1305,14 +1421,15 @@ function renderReceipts() {
       lockScroll(true);
     });
   });
-  // 编辑/删除（委托）
+  // 编辑（委托）
   container.querySelectorAll('[data-act="edit-receipt"]').forEach((b) => {
     b.addEventListener("click", (e) => { e.stopPropagation(); openReceiptModal(b.closest(".rc-card").dataset.id); });
   });
-  container.querySelectorAll('[data-act="del-receipt"]').forEach((b) => {
-    b.addEventListener("click", (e) => {
-      e.stopPropagation();
-      const id = b.closest(".rc-card").dataset.id;
+  // 左滑删除小票
+  container.querySelectorAll(".rc-list .swipe-row").forEach((row) => {
+    const card = row.querySelector(".rc-card");
+    setupSwipeRow(row, () => {
+      const id = card.dataset.id;
       if (confirm("删除这张小票？")) {
         data.receipts = (data.receipts || []).filter((r) => r.id !== id);
         renderReceipts();
@@ -1617,11 +1734,6 @@ function bootApp() {
       const actBtn = e.target.closest("[data-act]");
       if (actBtn) {
         if (actBtn.dataset.act === "edit") openFlightModal(id);
-        if (actBtn.dataset.act === "del" && confirm("删除这段航班？")) {
-          data.flights = data.flights.filter((f) => f.id !== id);
-          renderFlights();
-          apiDelete(`/api/flights/${id}`);
-        }
       } else {
         openFlightModal(id);
       }
@@ -1783,22 +1895,6 @@ function bootApp() {
     renderBudget();
     apiPost(`/api/budget/${type}`, { item, detail, spend, paid, version: data ? data.version : undefined });
     closeModal();
-  });
-
-  // 删除账单按钮（委托，按所在表判断币种）
-  document.addEventListener("click", (e) => {
-    const delBtn = e.target.closest('[data-act="del-bill"]');
-    if (delBtn) {
-      const row = delBtn.closest(".bill-row");
-      const type = delBtn.closest(".budget-panel.cny") ? "cny" : "thb";
-      if (row && confirm("删除该账单？")) {
-        const list = type === "thb" ? data.budgetTHB : data.budgetCNY;
-        const idx = list.findIndex((b) => b.id === row.dataset.id);
-        if (idx >= 0) list.splice(idx, 1);
-        renderBudget();
-        apiDelete(`/api/budget/${type}/${row.dataset.id}`);
-      }
-    }
   });
 
   fetchData().catch((e) => setSync("offline", "加载失败，请刷新"));
