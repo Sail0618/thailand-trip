@@ -42,10 +42,8 @@ function isStandaloneApp() {
 function showInstallBtn() {
   const b = $("btn-install");
   if (!b) return;
-  const isIOS = /iphone|ipad|ipod/i.test(navigator.userAgent);
-  // 已安装隐藏；仅当"可安装(Chrome/Android)"或"iOS Safari"时显示
-  const show = !isStandaloneApp() && (deferredPrompt || isIOS);
-  b.style.display = show ? "inline-block" : "none";
+  // 未添加到主屏幕就展示（已安装 standalone 时隐藏）
+  b.style.display = isStandaloneApp() ? "none" : "inline-block";
 }
 window.addEventListener("beforeinstallprompt", (e) => {
   e.preventDefault();
