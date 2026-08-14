@@ -251,7 +251,7 @@ describe("EdgeOne Pages Functions", () => {
     assert.ok(hist.json.some((h) => h.data && h.data.flights && h.data.flights.length > 0));
   });
 
-  it("JSONBin 读取失败时抛错，绝不静默回退初始数据（防覆盖）", async () => {
+  it("JSONBin 读取失败且无缓存时进入降级只读，禁止写入防止覆盖真实数据", async () => {
     kv = null;
     const baseFetch = globalThis.fetch;
     globalThis.fetch = async (url, opts) => {
@@ -260,11 +260,14 @@ describe("EdgeOne Pages Functions", () => {
     };
     const env = { JSONBIN_BIN_ID: "bin123", JSONBIN_API_KEY: "key123" };
     try {
+      // 读取：返回降级数据（版本 0），前端缓存保护会保留客户端真实数据
       const got = await api("GET", "/api/data", undefined, env);
-      assert.equal(got.status, 500);
-      assert.ok(String(got.json && got.json.error || "").includes("读取失败"));
-      // 关键：绝不能静默返回初始数据（否则下一次保存会整包覆盖真实云数据）
-      assert.notEqual(got.json && got.json.error, undefined);
+      assert.equal(got.status, 200);
+      assert.equal(got.json.version, 0);
+      // 写入：必须被拦截，绝不能把模板写回（否则会覆盖真实云数据）
+      const write = await api("POST", "/api/todos", { text: "危险写入", category: "活动" }, env);
+      assert.equal(write.status, 500);
+      assert.ok(String(write.json && write.json.error || "").includes("暂不可用"));
     } finally {
       globalThis.fetch = baseFetch;
     }

@@ -201,28 +201,52 @@ async function load(kv, env) {
     }
     return normalize(data);
   }
-  // KV 未绑定 → JSONBin 直连存储
+  // KV 未绑定 → 先用 Blob 缓存（快、不消耗 JSONBin 配额），再回退 JSONBin
+  const blob = await blobCacheRead();
+  if (blob) { degradedReadOnly = false; return normalize(blob.data); } // 有缓存：直接用，不打 JSONBin
+
   const binId = env && env.JSONBIN_BIN_ID;
   const apiKey = env && env.JSONBIN_API_KEY;
   if (!binId || !apiKey) {
     // 未配置云存储：只能使用内置初始数据
+    degradedReadOnly = false;
     return normalize(clone(initialData));
   }
   try {
     const data = await jsonbinLoad(env);
-    if (data) return normalize(data);
+    if (data) {
+      degradedReadOnly = false;
+      await blobCacheWrite(data);                  // 写入 Blob 缓存，后续读取不再打 JSONBin
+      return normalize(data);
+    }
   } catch (e) {
     console.error("JSONBin 读取失败：" + (e && e.message));
-    // 读取失败必须抛错，绝不能静默回退初始数据——
-    // 否则下一次保存会用初始数据整包覆盖真实云数据（曾导致丢数据）
-    throw new Error("数据读取失败，请稍后重试");
+    // 无缓存且 JSONBin 失败 → 降级只读（返回初始数据给前端展示缓存，
+    // 并禁止写入，防止模板覆盖真实云数据）
+    degradedReadOnly = true;
+    return normalize(clone(initialData));
   }
+  degradedReadOnly = false;
   return normalize(clone(initialData));
 }
 
 async function save(kv, env, data) {
   if (kv) return kvPut(kv, DATA_KEY, data);
-  await jsonbinSave(env, data);
+  // 降级只读态禁止写入（防止模板覆盖真实云数据）
+  if (degradedReadOnly) throw new Error("数据源暂不可用，请稍后再试");
+  // 无 KV：写 Blob（主，快），JSONBin 作备份（失败不阻塞——避免 JSONBin 限流时无法编辑）
+  let ok = false;
+  try {
+    await blobCacheWrite(data);
+    ok = true;
+  } catch (e) { /* 忽略 */ }
+  try {
+    await jsonbinSave(env, data);
+    ok = true;
+  } catch (e) {
+    console.error("JSONBin 备份失败：" + (e && e.message));
+  }
+  if (!ok) throw new Error("数据保存失败，请稍后重试");
 }
 
 async function commit(kv, env, nextStore) {
@@ -377,6 +401,35 @@ function getBlobStore() {
     }
   })();
   return _blobStorePromise;
+}
+
+// EdgeOne Blob 数据缓存（KV 未审批时用）：读写走 Blob（快、不消耗 JSONBin 配额），JSONBin 仅作备份
+const DATA_CACHE_KEY = "trip_data_cache";
+const DATA_CACHE_TTL_MS = 300 * 1000; // 缓存 5 分钟
+let degradedReadOnly = false; // JSONBin 不可达且无缓存时进入降级只读态，禁止写入防止覆盖真实数据
+
+async function blobCacheRead() {
+  try {
+    const store = await getBlobStore();
+    if (!store) return null;
+    const raw = await store.get(DATA_CACHE_KEY, { type: "text" });
+    if (!raw) return null;
+    const obj = JSON.parse(raw);
+    const data = obj && obj.data ? obj.data : null;
+    if (!data) return null;
+    // 过期缓存仍可兜底（JSONBin 失败时用），返回时带上时间戳
+    return { data, cachedAt: obj.savedAt || 0 };
+  } catch (e) {
+    return null;
+  }
+}
+
+async function blobCacheWrite(data) {
+  try {
+    const store = await getBlobStore();
+    if (!store) return;
+    await store.set(DATA_CACHE_KEY, JSON.stringify({ savedAt: Date.now(), data }));
+  } catch (e) { /* 缓存写入失败不影响主流程 */ }
 }
 
 async function handleApi(method, pathname, query, body, kv, env, user) {
