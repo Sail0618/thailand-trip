@@ -18,6 +18,13 @@ const EXPORT_MODE = new URLSearchParams(location.search).has("export");
 let restoreBannerShown = false;   // 恢复提示只弹一次
 let acceptServerOverride = false; // 用户点"暂不"后，接受服务器数据并恢复正常同步
 
+// 注册 PWA Service Worker（离线缓存页面外壳；导出页不注册）
+if ("serviceWorker" in navigator && !EXPORT_MODE) {
+  window.addEventListener("load", () => {
+    navigator.serviceWorker.register("/sw.js").catch(() => {});
+  });
+}
+
 // 服务器数据是否应覆盖本地缓存
 // 判定"被回滚"：①服务器 version 低于缓存 ②缓存有退税小票/勾选待办但服务器没有（防旧快照覆盖）
 function freshShouldWin(cached, fresh) {
