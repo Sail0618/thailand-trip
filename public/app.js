@@ -39,6 +39,16 @@ let deferredPrompt = null;
 function isStandaloneApp() {
   return (window.matchMedia && window.matchMedia("(display-mode: standalone)").matches) || window.navigator.standalone === true;
 }
+// 监听"是否以独立模式运行"的变化：从主屏幕移除后回到浏览器模式时，按钮重新展示
+function watchStandaloneMode() {
+  try {
+    const mq = window.matchMedia("(display-mode: standalone)");
+    const recheck = () => showInstallBtn();
+    if (mq.addEventListener) mq.addEventListener("change", recheck);
+    document.addEventListener("visibilitychange", recheck);
+    window.addEventListener("focus", recheck);
+  } catch (e) { /* ignore */ }
+}
 function showInstallBtn() {
   const b = $("btn-install");
   if (!b) return;
