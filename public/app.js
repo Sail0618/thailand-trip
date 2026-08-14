@@ -1003,16 +1003,21 @@ function fmtMoney(v) {
   return isFinite(n) ? n.toLocaleString("zh-CN", { maximumFractionDigits: 2 }) : "0";
 }
 
-function receiptCard(r) {
+let activeReceiptTab = "all"; // 当前选中的上传人 tab
+
+function receiptCard(r, showUser) {
   const thumb = r.imageKey
     ? `<img class="rc-thumb" src="/api/receipts/image?key=${encodeURIComponent(r.imageKey)}" alt="小票" loading="lazy">`
     : "";
   const refundTxt = Number(r.refund) > 0 ? ` · 💸 退税 ${escapeHtml(fmtMoney(r.refund))} ฿` : "";
+  const userTag = showUser
+    ? `<span class="rc-user"><i style="background:${rcColor(r.user)}"></i>${escapeHtml(r.user || "匿名")}</span>`
+    : "";
   return `<div class="rc-card" data-id="${escapeHtml(r.id)}">
     ${thumb}
     <div class="rc-main">
       <div class="rc-store">${escapeHtml(r.store) || "未填写店名"}</div>
-      <div class="rc-meta">📅 ${escapeHtml(r.date || "—")} · 💰 ${escapeHtml(fmtMoney(r.amount))} ฿${refundTxt}</div>
+      <div class="rc-meta">📅 ${escapeHtml(r.date || "—")} · 💰 ${escapeHtml(fmtMoney(r.amount))} ฿${refundTxt}${userTag}</div>
       ${r.note ? `<div class="rc-note">📝 ${escapeHtml(r.note)}</div>` : ""}
     </div>
     <span class="rc-actions">
@@ -1030,24 +1035,28 @@ function renderReceipts() {
     container.innerHTML = `<div class="rc-empty">还没有退税小票，点上方「＋ 新增」拍照上传</div>`;
     return;
   }
-  // 按上传人分组（同名合并）
-  const groups = {};
-  list.forEach((r) => {
-    const u = r.user || "匿名";
-    (groups[u] = groups[u] || []).push(r);
-  });
+  // 上传人 tab 列表（"全部" + 每个有票的人）
+  const users = [...new Set(list.map((r) => r.user || "匿名"))];
+  if (activeReceiptTab !== "all" && !users.includes(activeReceiptTab)) activeReceiptTab = "all";
   const me = localStorage.getItem("trip_myname") || "";
-  const html = Object.keys(groups).map((user) => `
-    <div class="rc-group">
-      <div class="rc-group-title">
-        <span class="rc-dot" style="background:${rcColor(user)}"></span>
-        ${escapeHtml(user)}${user === me ? "（我）" : ""}
-        <span class="rc-count">${groups[user].length} 张</span>
-      </div>
-      ${groups[user].map(receiptCard).join("")}
-    </div>`).join("");
-  container.innerHTML = html;
+  const tabsHtml = ["all", ...users].map((u) => {
+    const count = u === "all" ? list.length : list.filter((r) => (r.user || "匿名") === u).length;
+    const label = u === "all" ? "全部" : u + (u === me ? "（我）" : "");
+    return `<button class="rc-tab ${activeReceiptTab === u ? "sel" : ""}" data-tab="${escapeHtml(u)}">${escapeHtml(label)}<span class="rc-tab-count">${count}</span></button>`;
+  }).join("");
 
+  const filtered = activeReceiptTab === "all" ? list : list.filter((r) => (r.user || "匿名") === activeReceiptTab);
+  const showUser = activeReceiptTab === "all";
+  const cardsHtml = filtered.map((r) => receiptCard(r, showUser)).join("");
+
+  container.innerHTML = `
+    <div class="rc-tabs">${tabsHtml}</div>
+    <div class="rc-list">${cardsHtml || `<div class="rc-empty">该成员还没有小票</div>`}</div>`;
+
+  // tab 切换
+  container.querySelectorAll(".rc-tab").forEach((t) => {
+    t.addEventListener("click", () => { activeReceiptTab = t.dataset.tab; renderReceipts(); });
+  });
   // 点击缩略图 → 全屏查看
   container.querySelectorAll(".rc-thumb").forEach((img) => {
     img.addEventListener("click", (e) => {
