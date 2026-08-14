@@ -22,10 +22,10 @@ class MockKV {
 const originalFetch = globalThis.fetch;
 let kv;
 
-async function api(method, path, body, env) {
+async function api(method, path, body, env, headers) {
   const req = new Request("http://localhost" + path, {
     method,
-    headers: body !== undefined ? { "Content-Type": "application/json" } : {},
+    headers: { ...(body !== undefined ? { "Content-Type": "application/json" } : {}), ...(headers || {}) },
     body: body !== undefined ? JSON.stringify(body) : undefined
   });
   const res = await onRequest({ request: req, env: { THAILAND_KV: kv, ...(env || {}) } });
@@ -268,6 +268,25 @@ describe("EdgeOne Pages Functions", () => {
     } finally {
       globalThis.fetch = baseFetch;
     }
+  });
+
+  it("写操作自动记录到操作变更记录（changelog）", async () => {
+    kv = new MockKV();
+    const created = await api("POST", "/api/todos", { text: "记录测试待办", category: "活动" }, undefined, { "X-User": encodeURIComponent("小明") });
+    assert.equal(created.status, 200);
+    const { json: data } = await api("GET", "/api/data");
+    assert.ok(Array.isArray(data.changelog));
+    assert.equal(data.changelog.length, 1);
+    assert.equal(data.changelog[0].user, "小明");
+    assert.ok(String(data.changelog[0].action).includes("记录测试待办"));
+    assert.ok(data.changelog[0].at);
+    assert.ok(data.changelog[0].id);
+    // 最多保留 60 条
+    for (let i = 0; i < 65; i++) {
+      await api("POST", "/api/todos", { text: "填充" + i, category: "活动" }, undefined, { "X-User": encodeURIComponent("测试") });
+    }
+    const { json: d2 } = await api("GET", "/api/data");
+    assert.equal(d2.changelog.length, 60);
   });
 
   it("健康检查与未知接口", async () => {

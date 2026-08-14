@@ -50,6 +50,19 @@ function pickPatch(body, allow) {
   return patch;
 }
 
+// 操作变更记录：追加一条"谁·做了什么·什么时候"（最多保留 60 条）
+function logAction(data, user, action) {
+  const list = Array.isArray(data.changelog) ? data.changelog : [];
+  list.push({
+    id: genId("c"),
+    user: cleanStr(user, 50) || "匿名",
+    action: cleanStr(action, 200),
+    at: Date.now()
+  });
+  while (list.length > 60) list.shift();
+  data.changelog = list;
+}
+
 function json(data, status = 200) {
   return new Response(JSON.stringify(data), {
     status,
@@ -234,7 +247,8 @@ async function commit(kv, env, nextStore) {
 // ---------- 乐观锁 ----------
 function expectedVersion(query, body) {
   const v = body && body.version !== undefined ? body.version : query.get("version");
-  return v === undefined ? undefined : Number(v);
+  // 未传版本时返回 undefined（不做乐观锁校验），而不是 Number(null)=0 误判 409
+  return (v === undefined || v === null || v === "") ? undefined : Number(v);
 }
 
 function assertVersion(current, expected) {
@@ -365,7 +379,7 @@ function getBlobStore() {
   return _blobStorePromise;
 }
 
-async function handleApi(method, pathname, query, body, kv, env) {
+async function handleApi(method, pathname, query, body, kv, env, user) {
   const seg = pathname.split("/").filter(Boolean).map(safeDecode); // ["api", "data", ...]
 
   // /api/data/history（读取历史备份，用于数据找回；仅 KV 模式）
@@ -405,7 +419,9 @@ async function handleApi(method, pathname, query, body, kv, env) {
       }
       const current = await load(kv, env);
       assertVersion(current, expectedVersion(query, body));
-      const saved = await commit(kv, env, normalize(body));
+      const next = normalize(body);
+      logAction(next, user, "恢复了线上数据");
+      const saved = await commit(kv, env, next);
       return json({ ok: true, version: saved.version });
     }
     return json({ error: "不支持的方法" }, 405);
@@ -429,6 +445,7 @@ async function handleApi(method, pathname, query, body, kv, env) {
     const rate = Number(body && body.rate);
     if (!isFinite(rate) || rate <= 0) return json({ error: "汇率需为正数" }, 400);
     current.fxRate = rate;
+    logAction(current, user, `更新汇率 → ${rate}`);
     const saved = await commit(kv, env, current);
     return json({ ok: true, version: saved.version });
   }
@@ -449,6 +466,7 @@ async function handleApi(method, pathname, query, body, kv, env) {
     assertVersion(current, expectedVersion(query, body));
     const live = await fetchLiveFxRate(kv, env);
     current.fxRate = live.rate;
+    logAction(current, user, `更新汇率 → ${live.rate}（实时）`);
     const saved = await commit(kv, env, current);
     return json({ ok: true, rate: live.rate, source: live.source, fetchedAt: live.fetchedAt, version: saved.version });
   }
@@ -467,6 +485,7 @@ async function handleApi(method, pathname, query, body, kv, env) {
         flightNo: f.flightNo, bookingNo: f.bookingNo, note: f.note
       };
       current.flights.push(flight);
+      logAction(current, user, `新增航班「${flight.route || "未填航线"}」`);
       const saved = await commit(kv, env, current);
       return json({ ok: true, id: flight.id, version: saved.version });
     }
@@ -479,12 +498,16 @@ async function handleApi(method, pathname, query, body, kv, env) {
     if (method === "POST") {
       if (idx === -1) return json({ error: "航班不存在" }, 404);
       assertVersion(current, expectedVersion(query, body));
-      current.flights[idx] = { ...current.flights[idx], ...cleanFlight(body) };
+      const mergedFlight = { ...current.flights[idx], ...cleanFlight(body) };
+      current.flights[idx] = mergedFlight;
+      logAction(current, user, `更新航班「${mergedFlight.route || ""}」`);
       const saved = await commit(kv, env, current);
       return json({ ok: true, version: saved.version });
     }
     if (method === "DELETE") {
+      const removedFlight = current.flights.find((f) => f.id === id);
       current.flights = current.flights.filter((f) => f.id !== id);
+      logAction(current, user, `删除航班「${(removedFlight && removedFlight.route) || ""}」`);
       const saved = await commit(kv, env, current);
       return json({ ok: true, version: saved.version });
     }
@@ -505,6 +528,7 @@ async function handleApi(method, pathname, query, body, kv, env) {
         done: false
       };
       current.todos.push(todo);
+      logAction(current, user, `新增待办「${todo.text}」`);
       const saved = await commit(kv, env, current);
       return json({ ok: true, id: todo.id, version: saved.version });
     }
@@ -522,12 +546,20 @@ async function handleApi(method, pathname, query, body, kv, env) {
       if ("text" in patch) patch.text = cleanStr(patch.text, 500);
       if ("category" in patch) patch.category = cleanStr(patch.category, 50) || "其他";
       if ("date" in patch) patch.date = cleanStr(patch.date, 20);
-      current.todos[idx] = { ...current.todos[idx], ...patch };
+      const beforeTodo = current.todos[idx];
+      const afterTodo = { ...beforeTodo, ...patch };
+      current.todos[idx] = afterTodo;
+      const todoAct = patch.done !== undefined
+        ? (patch.done ? `勾选待办「${afterTodo.text}」` : `取消勾选待办「${afterTodo.text}」`)
+        : `更新待办「${afterTodo.text}」`;
+      logAction(current, user, todoAct);
       const saved = await commit(kv, env, current);
       return json({ ok: true, version: saved.version });
     }
     if (method === "DELETE") {
+      const removedTodo = current.todos.find((t) => t.id === id);
       current.todos = current.todos.filter((t) => t.id !== id);
+      logAction(current, user, `删除待办「${(removedTodo && removedTodo.text) || ""}」`);
       const saved = await commit(kv, env, current);
       return json({ ok: true, version: saved.version });
     }
@@ -555,7 +587,9 @@ async function handleApi(method, pathname, query, body, kv, env) {
           }))
         : [];
     }
-    current.days[idx] = { ...current.days[idx], ...patch };
+    const afterDay = { ...current.days[idx], ...patch };
+    current.days[idx] = afterDay;
+    logAction(current, user, `更新行程「${afterDay.title || afterDay.date || ""}」`);
     const saved = await commit(kv, env, current);
     return json({ ok: true, version: saved.version });
   }
@@ -564,7 +598,9 @@ async function handleApi(method, pathname, query, body, kv, env) {
   if (seg[1] === "days" && seg.length === 3 && method === "DELETE") {
     const id = seg[2];
     const current = await load(kv, env);
+    const removedDay = current.days.find((d) => d.id === id);
     current.days = current.days.filter((d) => d.id !== id);
+    logAction(current, user, `删除行程「${(removedDay && (removedDay.title || removedDay.date)) || ""}」`);
     const saved = await commit(kv, env, current);
     return json({ ok: true, version: saved.version });
   }
@@ -586,6 +622,7 @@ async function handleApi(method, pathname, query, body, kv, env) {
       items: []
     };
     current.days.push(day);
+    logAction(current, user, `新增行程「${day.title || day.date || ""}」`);
     const saved = await commit(kv, env, current);
     return json({ ok: true, id: day.id, version: saved.version });
   }
@@ -643,6 +680,7 @@ async function handleApi(method, pathname, query, body, kv, env) {
         createdAt: Date.now()
       };
       current.receipts.push(receipt);
+      logAction(current, user, `上传小票「${receipt.store || "未填店名"}」`);
       const saved = await commit(kv, env, current);
       return json({ ok: true, id: receipt.id, version: saved.version });
     }
@@ -665,12 +703,16 @@ async function handleApi(method, pathname, query, body, kv, env) {
       if ("date" in patch) patch.date = cleanStr(patch.date, 20);
       if ("note" in patch) patch.note = cleanStr(patch.note, 500);
       if ("imageKey" in patch) patch.imageKey = cleanStr(patch.imageKey, 300);
-      current.receipts[idx] = { ...current.receipts[idx], ...patch };
+      const afterReceipt = { ...current.receipts[idx], ...patch };
+      current.receipts[idx] = afterReceipt;
+      logAction(current, user, `更新小票「${afterReceipt.store || ""}」`);
       const saved = await commit(kv, env, current);
       return json({ ok: true, version: saved.version });
     }
     if (method === "DELETE") {
+      const removedReceipt = current.receipts.find((r) => r.id === id);
       current.receipts = current.receipts.filter((r) => r.id !== id);
+      logAction(current, user, `删除小票「${(removedReceipt && removedReceipt.store) || ""}」`);
       const saved = await commit(kv, env, current);
       return json({ ok: true, version: saved.version });
     }
@@ -692,6 +734,7 @@ async function handleApi(method, pathname, query, body, kv, env) {
         paid: cleanNum(body && body.paid)
       };
       budgetList(current, type).push(item);
+      logAction(current, user, `新增账单「${item.item}」`);
       const saved = await commit(kv, env, current);
       return json({ ok: true, id: item.id, version: saved.version });
     }
@@ -711,12 +754,16 @@ async function handleApi(method, pathname, query, body, kv, env) {
       if ("paid" in patch) patch.paid = cleanNum(patch.paid);
       if ("item" in patch) patch.item = cleanStr(patch.item, 200);
       if ("detail" in patch) patch.detail = cleanStr(patch.detail, 500);
-      list[idx] = { ...list[idx], ...patch };
+      const afterBill = { ...list[idx], ...patch };
+      list[idx] = afterBill;
+      logAction(current, user, `更新账单「${afterBill.item || ""}」`);
       const saved = await commit(kv, env, current);
       return json({ ok: true, version: saved.version });
     }
     if (method === "DELETE") {
+      const removedBill = list[idx];
       list.splice(idx, 1);
+      logAction(current, user, `删除账单「${(removedBill && removedBill.item) || ""}」`);
       const saved = await commit(kv, env, current);
       return json({ ok: true, version: saved.version });
     }
@@ -778,8 +825,9 @@ export async function onRequest(context) {
       } catch (e) { /* 无 body 或非 JSON */ }
     }
     const kv = resolveKv(env);
+    const user = safeDecode(cleanStr(request.headers.get("x-user"), 50));
     // KV 未绑定时允许回退 JSONBin（需配置 JSONBIN_BIN_ID / JSONBIN_API_KEY）
-    return await handleApi(method, url.pathname, url.searchParams, body, kv, env);
+    return await handleApi(method, url.pathname, url.searchParams, body, kv, env, user);
   } catch (e) {
     if (e && e.status === 409) return json({ error: e.message }, 409);
     return json({ error: (e && e.message) || "服务器错误" }, 500);

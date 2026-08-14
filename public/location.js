@@ -12,7 +12,7 @@ const AMAP_SECURITY = (window.AMAP_CONFIG && window.AMAP_CONFIG.securityCode) ||
 let map = null;
 let markers = {};           // 高德 Marker 集合 { id: marker }
 let myId = null;            // 当前用户 id
-let myName = localStorage.getItem("trip_myname") || "";
+let myName = localStorage.getItem("trip_user_name") || "";
 let myColor = null;
 let sharing = false;
 let shareInterval = null;   // 上传定时器
@@ -278,11 +278,10 @@ function buildMapLinks(loc) {
   const lat = c.lat.toFixed(6), lng = c.lng.toFixed(6);
   const name = encodeURIComponent(loc.name || "位置");
   return [
-    { app: "高德地图", icon: "🗺️", url: `https://uri.amap.com/marker?position=${lng},${lat}&name=${name}` },
-    { app: "腾讯地图", icon: "🧭", url: `https://apis.map.qq.com/uri/v1/marker?marker=coord:${lat},${lng};name:${name}` },
-    { app: "百度地图", icon: "🐻", url: `https://api.map.baidu.com/marker?location=${lat},${lng}&title=${name}&output=html&coord_type=wgs84` },
-    { app: "苹果地图", icon: "🍎", url: `http://maps.apple.com/?ll=${lat},${lng}&q=${name}` },
-    { app: "Google 地图", icon: "🌐", url: `https://www.google.com/maps/search/?api=1&query=${lat},${lng}` }
+    { app: "高德地图", logo: "/img/maps/gaode.jpg", url: `https://uri.amap.com/marker?position=${lng},${lat}&name=${name}` },
+    { app: "苹果地图", logo: "/img/maps/apple.jpg", url: `http://maps.apple.com/?ll=${lat},${lng}&q=${name}` },
+    { app: "百度地图", logo: "/img/maps/baidu.jpg", url: `https://api.map.baidu.com/marker?location=${lat},${lng}&title=${name}&output=html&coord_type=wgs84` },
+    { app: "Google 地图", logo: "/img/maps/google.png", url: `https://www.google.com/maps/search/?api=1&query=${lat},${lng}` }
   ];
 }
 
@@ -290,7 +289,10 @@ function openMapSheet(loc) {
   navLoc = loc;
   $("ms-name").textContent = loc.name || "";
   $("ms-list").innerHTML = buildMapLinks(loc).map((m) =>
-    `<a class="map-sheet-item" href="${escapeHtml(m.url)}" target="_blank" rel="noopener">${escapeHtml(m.icon)} ${escapeHtml(m.app)}</a>`
+    `<a class="map-sheet-item" href="${escapeHtml(m.url)}" target="_blank" rel="noopener">` +
+      `<img class="map-logo" src="${escapeHtml(m.logo)}" alt="${escapeHtml(m.app)}" loading="lazy">` +
+      `<span>${escapeHtml(m.app)}</span>` +
+    `</a>`
   ).join("");
   $("map-sheet").style.display = "flex";
 }
@@ -349,17 +351,16 @@ function renderMemberList(list) {
 // 共享控制
 // ============================================================
 function startSharing() {
-  myName = $("my-name").value.trim();
+  myName = localStorage.getItem("trip_user_name") || "";
   if (!myName) {
-    alert("请先输入你的名字");
-    $("my-name").focus();
+    $("loc-status").textContent = "请先在主页输入用户名";
+    $("loc-status").className = "loc-status off";
     return;
   }
   if (!("geolocation" in navigator)) {
     alert("你的浏览器不支持定位功能");
     return;
   }
-  localStorage.setItem("trip_myname", myName);
   // 分配颜色（按名字 hash 稳定分配）
   let h = 0;
   for (let i = 0; i < myName.length; i++) h = (h * 31 + myName.charCodeAt(i)) >>> 0;
@@ -426,8 +427,9 @@ function stopSharing() {
 // 初始化
 // ============================================================
 document.addEventListener("DOMContentLoaded", () => {
-  // 恢复上次名字
-  if (myName) $("my-name").value = myName;
+  // 显示全局用户名
+  const nameLabel = $("my-name-label");
+  if (nameLabel) nameLabel.textContent = myName || "未设置";
   // 地图 APP 选择面板：取消 + 点击遮罩关闭
   $("ms-cancel").addEventListener("click", closeMapSheet);
   $("map-sheet").addEventListener("click", (e) => { if (e.target === e.currentTarget) closeMapSheet(); });
@@ -435,14 +437,6 @@ document.addEventListener("DOMContentLoaded", () => {
   $("btn-toggle").addEventListener("click", () => {
     if (sharing) stopSharing();
     else startSharing();
-  });
-  // 名字改动：已共享时即时更新并重新上报
-  $("my-name").addEventListener("change", () => {
-    const v = $("my-name").value.trim();
-    if (!v) return;
-    myName = v;
-    localStorage.setItem("trip_myname", myName);
-    if (sharing) uploadPosition();
   });
   // 页面离开时停止（避免后台继续请求）
   window.addEventListener("beforeunload", () => { if (sharing) stopSharing(); });
@@ -455,12 +449,12 @@ document.addEventListener("DOMContentLoaded", () => {
   autoStartSharing();
 });
 
-// 默认自动开始：没有名字就分配一个"游客+数字"，地图就绪后直接开始
+// 默认自动开始：使用主页输入的全局用户名，地图就绪后直接开始
 function autoStartSharing() {
   if (!myName) {
-    myName = "游客" + Math.floor(1000 + Math.random() * 9000);
-    localStorage.setItem("trip_myname", myName);
-    $("my-name").value = myName;
+    $("loc-status").textContent = "请先在主页输入用户名";
+    $("loc-status").className = "loc-status off";
+    return;
   }
   waitForMapThenStart();
 }

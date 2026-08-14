@@ -116,7 +116,7 @@ function showRestoreBanner(cached, fresh) {
     try {
       const res = await fetch("/api/data", {
         method: "PUT",
-        headers: { "Content-Type": "application/json" },
+        headers: { "Content-Type": "application/json", "X-User": encodeURIComponent(getUserName()) },
         body: JSON.stringify({ ...cached, version: (fresh && fresh.version) })
       });
       if (res.ok) {
@@ -144,6 +144,17 @@ function showRestoreBanner(cached, fresh) {
 }
 
 if (EXPORT_MODE) initExportPage();
+
+// ============================================================
+// 全局用户名：首次进入输入一次，用于位置共享/退税小票等所有功能
+// ============================================================
+const USER_KEY = "trip_user_name";
+function getUserName() {
+  try { return (localStorage.getItem(USER_KEY) || "").trim(); } catch (e) { return ""; }
+}
+function setUserName(name) {
+  try { localStorage.setItem(USER_KEY, String(name || "").trim()); } catch (e) {}
+}
 
 let data = null;               // 当前数据快照
 let editingFlightId = null;    // 正在编辑的航班 id
@@ -268,6 +279,37 @@ function renderContent() {
   if (!editingTodoDateId) renderTodos();
   if (!editingBudgetId) renderBudget();
   if (!editingReceiptId) renderReceipts();
+  renderChangelog();
+}
+
+// ============================================================
+// 操作变更记录（页面底部）
+// ============================================================
+function fmtChangeTime(ts) {
+  const diff = Date.now() - (Number(ts) || Date.now());
+  const mins = Math.round(diff / 60000);
+  if (mins <= 1) return "刚刚";
+  if (mins < 60) return mins + " 分钟前";
+  if (mins < 1440) return Math.floor(mins / 60) + " 小时前";
+  return Math.floor(mins / 1440) + " 天前";
+}
+
+function renderChangelog() {
+  const el = $("changelog-list");
+  if (!el) return;
+  const list = (data && data.changelog) || [];
+  if (!list.length) {
+    el.innerHTML = `<div class="chg-empty">暂无操作记录，大家改了什么会显示在这里</div>`;
+    return;
+  }
+  const myName = getUserName();
+  const rows = list.slice().reverse().map((c) => `
+    <div class="chg-item">
+      <span class="chg-user">${escapeHtml(c.user)}</span>
+      <span class="chg-action">${escapeHtml(c.action)}</span>
+      <span class="chg-time">${escapeHtml(fmtChangeTime(c.at))}</span>
+    </div>`).join("");
+  el.innerHTML = rows;
 }
 
 // ============================================================
@@ -1007,7 +1049,7 @@ function renderFx() {
       try {
         const res = await fetch("/api/fx/refresh", {
           method: "POST",
-          headers: { "Content-Type": "application/json" },
+          headers: { "Content-Type": "application/json", "X-User": encodeURIComponent(getUserName()) },
           body: JSON.stringify({ version: data ? data.version : undefined })
         });
         if (res.status === 409) {
@@ -1183,7 +1225,7 @@ function renderReceipts() {
   // 上传人 tab 列表（"全部" + 每个有票的人）
   const users = [...new Set(list.map((r) => r.user || "匿名"))];
   if (activeReceiptTab !== "all" && !users.includes(activeReceiptTab)) activeReceiptTab = "all";
-  const me = localStorage.getItem("trip_myname") || "";
+  const me = getUserName() || "";
   const tabsHtml = ["all", ...users].map((u) => {
     const count = u === "all" ? list.length : list.filter((r) => (r.user || "匿名") === u).length;
     const label = u === "all" ? "全部" : u + (u === me ? "（我）" : "");
@@ -1277,8 +1319,9 @@ function openReceiptModal(id) {
   editingReceiptId = id || null;
   const r = id ? (data.receipts || []).find((x) => x.id === id) : null;
   $("receipt-modal-title").textContent = r ? "编辑小票" : "新增小票";
-  const myName = localStorage.getItem("trip_myname") || "";
-  $("r-user").value = r ? (r.user || "") : myName;
+  const myName = getUserName() || "匿名";
+  const userDisp = $("r-user-display");
+  if (userDisp) userDisp.textContent = r ? (r.user || myName) : myName;
   $("r-store").value = r ? (r.store || "") : "";
   $("r-amount").value = r ? (r.amount || 0) : 0;
   $("r-refund").value = r ? (r.refund || 0) : 0;
@@ -1318,7 +1361,7 @@ function closeReceiptModal() {
 
 async function saveReceipt() {
   const form = {
-    user: $("r-user").value.trim() || "匿名",
+    user: getUserName() || "匿名",
     store: $("r-store").value.trim(),
     amount: Number($("r-amount").value) || 0,
     refund: Number($("r-refund").value) || 0,
@@ -1358,7 +1401,7 @@ async function apiPost(url, body) {
   try {
     const res = await fetch(url, {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
+      headers: { "Content-Type": "application/json", "X-User": encodeURIComponent(getUserName()) },
       body: JSON.stringify(body)
     });
     if (res.status === 409) {
@@ -1381,7 +1424,7 @@ async function apiDelete(url) {
     const version = data ? data.version : undefined;
     const sep = url.includes("?") ? "&" : "?";
     const full = version !== undefined ? `${url}${sep}version=${encodeURIComponent(version)}` : url;
-    const res = await fetch(full, { method: "DELETE" });
+    const res = await fetch(full, { method: "DELETE", headers: { "X-User": encodeURIComponent(getUserName()) } });
     if (res.status === 409) {
       setSync("offline", "数据已更新，正在刷新…");
       poll();
@@ -1447,7 +1490,36 @@ function setSync(state, text) {
 // ============================================================
 // 事件绑定
 // ============================================================
-document.addEventListener("DOMContentLoaded", () => {
+// 首次进入：必须先输入全局用户名，输入后才启动应用
+function showNameGate() {
+  const gate = $("name-gate");
+  if (!gate) { bootApp(); return; }
+  gate.style.display = "flex";
+  const input = $("gate-name");
+  // 老版本位置共享用过的名字作为预填（可选）
+  try {
+    const old = localStorage.getItem("trip_myname");
+    if (old) input.value = old;
+  } catch (e) { /* ignore */ }
+  setTimeout(() => input.focus(), 120);
+  const enter = () => {
+    const name = input.value.trim();
+    if (!name) {
+      input.classList.add("shake");
+      setTimeout(() => input.classList.remove("shake"), 400);
+      input.focus();
+      return;
+    }
+    setUserName(name);
+    try { localStorage.removeItem("trip_myname"); } catch (e) { /* ignore */ }
+    gate.style.display = "none";
+    bootApp();
+  };
+  $("gate-enter").addEventListener("click", enter);
+  input.addEventListener("keydown", (e) => { if (e.key === "Enter") { e.preventDefault(); enter(); } });
+}
+
+function bootApp() {
   if (EXPORT_MODE) return; // 导出模式不启动正常应用（避免联网覆盖缓存）
   // 汇率换算：顶部按钮 → 弹窗
   $("btn-fx").addEventListener("click", () => {
@@ -1641,4 +1713,14 @@ document.addEventListener("DOMContentLoaded", () => {
 
   fetchData().catch((e) => setSync("offline", "加载失败，请刷新"));
   setupPolling();
+}
+
+document.addEventListener("DOMContentLoaded", () => {
+  if (EXPORT_MODE) return; // 导出页不显示门槛
+  // 首次进入：必须先输入用户名（之后自动记住，不再弹出）
+  if (!getUserName()) {
+    showNameGate();
+    return;
+  }
+  bootApp();
 });

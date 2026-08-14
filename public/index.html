@@ -12,6 +12,17 @@
 </head>
 <body>
 
+<!-- 首次进入：用户名门槛（全局唯一用户名，用于所有功能） -->
+<div class="name-gate" id="name-gate" style="display:none">
+  <div class="name-gate-card">
+    <div class="name-gate-title">👋 进入行程前，先告诉伙伴你是谁</div>
+    <div class="name-gate-sub">这个名字会用于<b>位置共享、退税小票</b>等所有功能，<br>只需第一次输入，之后自动记住</div>
+    <input type="text" id="gate-name" placeholder="输入你的名字" maxlength="12" autocomplete="off" autocapitalize="off">
+    <button class="name-gate-btn" id="gate-enter">进入行程</button>
+    <div class="name-gate-tip">⚠️ 请填写真实昵称，方便大家认出来</div>
+  </div>
+</div>
+
 <!-- Hero -->
 <div class="hero">
   <h1 id="hero-title">🇹🇭 泰国完整行程</h1>
@@ -36,6 +47,12 @@
 
   <!-- ============ 可拖拽组件容器 ============ -->
   <div id="components"></div>
+
+  <!-- ============ 操作变更记录 ============ -->
+  <div class="changelog">
+    <div class="changelog-head">📋 操作变更记录</div>
+    <div class="changelog-list" id="changelog-list"></div>
+  </div>
 
   <div class="footer">
     <p>📋 米多多的泰国完整行程 · 8 人团 · 2026.09.24-10.04 · 在线协作共享版</p>
@@ -180,7 +197,7 @@
     <div class="modal-header" id="receipt-modal-title">新增小票</div>
     <div class="modal-body">
       <label>上传人</label>
-      <input type="text" id="r-user" placeholder="你的名字（默认沿用位置共享的名字）">
+      <div class="r-user-fixed" id="r-user-display">—</div>
       <label>店名</label>
       <input type="text" id="r-store" placeholder="如：Boots 药妆店 / Big C">
       <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px">

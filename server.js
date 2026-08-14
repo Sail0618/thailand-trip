@@ -337,7 +337,8 @@ function cleanNum(v) {
 function expectedVersion(req) {
   const v =
     req.body && req.body.version !== undefined ? req.body.version : req.query.version;
-  return v === undefined ? undefined : Number(v);
+  // 未传版本时返回 undefined（不做乐观锁校验），而不是 Number(null)=0 误判 409
+  return (v === undefined || v === null || v === "") ? undefined : Number(v);
 }
 
 // 版本不一致时抛 409，由 route() 统一转成响应
@@ -366,6 +367,25 @@ function pickPatch(body, allow) {
   const patch = {};
   for (const k of allow) if (k in (body || {})) patch[k] = body[k];
   return patch;
+}
+
+// 操作变更记录：追加一条"谁·做了什么·什么时候"（最多保留 60 条）
+function logAction(data, user, action) {
+  const list = Array.isArray(data.changelog) ? data.changelog : [];
+  list.push({
+    id: "c" + Date.now().toString(36) + Math.random().toString(36).slice(2, 6),
+    user: cleanStr(user, 50) || "匿名",
+    action: cleanStr(action, 200),
+    at: Date.now()
+  });
+  while (list.length > 60) list.shift();
+  data.changelog = list;
+}
+
+// 从 X-User 头读取操作人（前端已 URL 编码，中文安全）
+function reqUser(req) {
+  const raw = req.headers["x-user"] || "";
+  try { return decodeURIComponent(raw).slice(0, 50); } catch (e) { return raw.slice(0, 50); }
 }
 
 // 干净的航班字段（用于新增/更新）
@@ -405,7 +425,9 @@ app.put("/api/data", route(async (req, res) => {
   }
   const current = await getStore();
   assertVersion(current, expectedVersion(req));
-  const saved = await commit(normalize(incoming));
+  const next = normalize(incoming);
+  logAction(next, reqUser(req), "恢复了线上数据");
+  const saved = await commit(next);
   res.json({ ok: true, version: saved.version });
 }));
 
@@ -423,7 +445,9 @@ app.post("/api/flights/:id", route(async (req, res) => {
   assertVersion(current, expectedVersion(req));
   const idx = current.flights.findIndex((f) => f.id === req.params.id);
   if (idx === -1) return res.status(404).json({ error: "航班不存在" });
-  current.flights[idx] = { ...current.flights[idx], ...cleanFlight(req.body) };
+  const mergedFlight = { ...current.flights[idx], ...cleanFlight(req.body) };
+  current.flights[idx] = mergedFlight;
+  logAction(current, reqUser(req), `更新航班「${mergedFlight.route || ""}」`);
   const saved = await commit(current);
   res.json({ ok: true, version: saved.version });
 }));
@@ -440,6 +464,7 @@ app.post("/api/flights", route(async (req, res) => {
     date: f.date, route: f.route, dep: f.dep, arr: f.arr,
     flightNo: f.flightNo, bookingNo: f.bookingNo, note: f.note
   });
+  logAction(current, reqUser(req), `新增航班「${f.route || "未填航线"}」`);
   const saved = await commit(current);
   res.json({ ok: true, id: current.flights[current.flights.length - 1].id, version: saved.version });
 }));
@@ -448,7 +473,9 @@ app.post("/api/flights", route(async (req, res) => {
 app.delete("/api/flights/:id", route(async (req, res) => {
   const current = await getStore();
   assertVersion(current, expectedVersion(req));
+  const removedFlight = current.flights.find((f) => f.id === req.params.id);
   current.flights = current.flights.filter((f) => f.id !== req.params.id);
+  logAction(current, reqUser(req), `删除航班「${(removedFlight && removedFlight.route) || ""}」`);
   const saved = await commit(current);
   res.json({ ok: true, version: saved.version });
 }));
@@ -471,7 +498,13 @@ app.post("/api/todos/:id", route(async (req, res) => {
   if ("text" in patch) patch.text = cleanStr(patch.text, 500);
   if ("category" in patch) patch.category = cleanStr(patch.category, 50) || "其他";
   if ("date" in patch) patch.date = cleanStr(patch.date, 20);
-  current.todos[idx] = { ...current.todos[idx], ...patch };
+  const beforeTodo = current.todos[idx];
+  const afterTodo = { ...beforeTodo, ...patch };
+  current.todos[idx] = afterTodo;
+  const todoAct = patch.done !== undefined
+    ? (patch.done ? `勾选待办「${afterTodo.text}」` : `取消勾选待办「${afterTodo.text}」`)
+    : `更新待办「${afterTodo.text}」`;
+  logAction(current, reqUser(req), todoAct);
   const saved = await commit(current);
   res.json({ ok: true, version: saved.version });
 }));
@@ -488,6 +521,7 @@ app.post("/api/todos", route(async (req, res) => {
     done: false
   };
   current.todos.push(todo);
+  logAction(current, reqUser(req), `新增待办「${todo.text}」`);
   const saved = await commit(current);
   res.json({ ok: true, id: todo.id, version: saved.version });
 }));
@@ -495,7 +529,9 @@ app.post("/api/todos", route(async (req, res) => {
 app.delete("/api/todos/:id", route(async (req, res) => {
   const current = await getStore();
   assertVersion(current, expectedVersion(req));
+  const removedTodo = current.todos.find((t) => t.id === req.params.id);
   current.todos = current.todos.filter((t) => t.id !== req.params.id);
+  logAction(current, reqUser(req), `删除待办「${(removedTodo && removedTodo.text) || ""}」`);
   const saved = await commit(current);
   res.json({ ok: true, version: saved.version });
 }));
@@ -523,7 +559,9 @@ app.post("/api/days/:id", route(async (req, res) => {
         }))
       : [];
   }
-  current.days[idx] = { ...current.days[idx], ...patch };
+  const afterDay = { ...current.days[idx], ...patch };
+  current.days[idx] = afterDay;
+  logAction(current, reqUser(req), `更新行程「${afterDay.title || afterDay.date || ""}」`);
   const saved = await commit(current);
   res.json({ ok: true, version: saved.version });
 }));
@@ -545,6 +583,7 @@ app.post("/api/days", route(async (req, res) => {
     items: []
   };
   current.days.push(day);
+  logAction(current, reqUser(req), `新增行程「${day.title || day.date || ""}」`);
   const saved = await commit(current);
   res.json({ ok: true, id: day.id, version: saved.version });
 }));
@@ -552,7 +591,9 @@ app.post("/api/days", route(async (req, res) => {
 // 删除一天
 app.delete("/api/days/:id", route(async (req, res) => {
   const current = await getStore();
+  const removedDay = current.days.find((d) => d.id === req.params.id);
   current.days = current.days.filter((d) => d.id !== req.params.id);
+  logAction(current, reqUser(req), `删除行程「${(removedDay && (removedDay.title || removedDay.date)) || ""}」`);
   const saved = await commit(current);
   res.json({ ok: true, version: saved.version });
 }));
@@ -614,7 +655,9 @@ app.post("/api/receipts/:id", route(async (req, res) => {
   if ("date" in patch) patch.date = cleanStr(patch.date, 20);
   if ("note" in patch) patch.note = cleanStr(patch.note, 500);
   if ("imageKey" in patch) patch.imageKey = cleanStr(patch.imageKey, 300);
-  current.receipts[idx] = { ...current.receipts[idx], ...patch };
+  const afterReceipt = { ...current.receipts[idx], ...patch };
+  current.receipts[idx] = afterReceipt;
+  logAction(current, reqUser(req), `更新小票「${afterReceipt.store || ""}」`);
   const saved = await commit(current);
   res.json({ ok: true, version: saved.version });
 }));
@@ -622,7 +665,9 @@ app.post("/api/receipts/:id", route(async (req, res) => {
 // 删除小票
 app.delete("/api/receipts/:id", route(async (req, res) => {
   const current = await getStore();
+  const removedReceipt = current.receipts.find((r) => r.id === req.params.id);
   current.receipts = current.receipts.filter((r) => r.id !== req.params.id);
+  logAction(current, reqUser(req), `删除小票「${(removedReceipt && removedReceipt.store) || ""}」`);
   const saved = await commit(current);
   res.json({ ok: true, version: saved.version });
 }));
@@ -650,6 +695,7 @@ app.post("/api/receipts", route(async (req, res) => {
     createdAt: Date.now()
   };
   current.receipts.push(receipt);
+  logAction(current, reqUser(req), `上传小票「${receipt.store || "未填店名"}」`);
   const saved = await commit(current);
   res.json({ ok: true, id: receipt.id, version: saved.version });
 }));
@@ -681,7 +727,9 @@ app.post("/api/budget/:type/:id", route(async (req, res) => {
   if ("paid" in patch) patch.paid = cleanNum(patch.paid);
   if ("item" in patch) patch.item = cleanStr(patch.item, 200);
   if ("detail" in patch) patch.detail = cleanStr(patch.detail, 500);
-  list[idx] = { ...list[idx], ...patch };
+  const afterBill = { ...list[idx], ...patch };
+  list[idx] = afterBill;
+  logAction(current, reqUser(req), `更新账单「${afterBill.item || ""}」`);
   const saved = await commit(current);
   res.json({ ok: true, version: saved.version });
 }));
@@ -701,6 +749,7 @@ app.post("/api/budget/:type", route(async (req, res) => {
     paid: cleanNum(body.paid)
   };
   list.push(item);
+  logAction(current, reqUser(req), `新增账单「${item.item}」`);
   const saved = await commit(current);
   res.json({ ok: true, id: item.id, version: saved.version });
 }));
@@ -713,7 +762,9 @@ app.delete("/api/budget/:type/:id", route(async (req, res) => {
   const list = budgetList(current, type);
   const idx = list.findIndex((b) => b.id === req.params.id);
   if (idx === -1) return res.status(404).json({ error: "预算项不存在" });
+  const removedBill = list[idx];
   list.splice(idx, 1);
+  logAction(current, reqUser(req), `删除账单「${(removedBill && removedBill.item) || ""}」`);
   const saved = await commit(current);
   res.json({ ok: true, version: saved.version });
 }));
@@ -727,6 +778,7 @@ app.post("/api/fx", route(async (req, res) => {
     return res.status(400).json({ error: "汇率需为正数" });
   }
   current.fxRate = rate;
+  logAction(current, reqUser(req), `更新汇率 → ${rate}`);
   const saved = await commit(current);
   res.json({ ok: true, version: saved.version });
 }));
@@ -799,6 +851,7 @@ app.post("/api/fx/refresh", route(async (req, res) => {
   assertVersion(current, expectedVersion(req));
   const live = await fetchLiveFxRate();
   current.fxRate = live.rate;
+  logAction(current, reqUser(req), `更新汇率 → ${live.rate}（实时）`);
   const saved = await commit(current);
   res.json({ ok: true, rate: live.rate, source: live.source, fetchedAt: live.fetchedAt, version: saved.version });
 }));

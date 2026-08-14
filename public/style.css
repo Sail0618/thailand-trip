@@ -109,7 +109,7 @@ input,select{font-family:inherit}
 .component-card.drag-over{box-shadow:0 0 0 2px var(--primary),0 10px 28px rgba(15,118,110,.12)}
 .drag-handle{cursor:grab;user-select:none;color:var(--text-3);font-size:.95em;letter-spacing:2px;padding:2px 6px;border-radius:6px;flex-shrink:0}
 .drag-handle:active{cursor:grabbing;color:var(--text-2)}
-.loc-iframe{display:block;background:var(--bg);height:520px;width:100%;border:none}
+.loc-iframe{display:block;background:var(--bg);height:560px;width:100%;border:none}
 .loc-iframe.drag-passthrough{pointer-events:none;opacity:.5;filter:grayscale(.7)}
 
 /* 组件头部操作：新增 + 排序 */
@@ -401,7 +401,7 @@ body.modal-open{overflow:hidden}
   .rc-thumb{width:52px;height:52px}
 
   /* 位置 iframe */
-  .loc-iframe{height:56dvh;min-height:380px;max-height:540px}
+  .loc-iframe{height:62dvh;min-height:420px;max-height:600px}
 
   /* 弹窗：底部抽屉 */
   .modal-overlay{align-items:flex-end;padding:0}
@@ -429,6 +429,33 @@ body.modal-open{overflow:hidden}
   from{transform:translateY(100%)}
   to{transform:translateY(0)}
 }
+
+/* ============ 操作变更记录 ============ */
+.changelog{margin:18px 0 6px;background:var(--card,#fff);border:1px solid var(--border,#ECEAE5);border-radius:16px;box-shadow:0 1px 2px rgba(20,30,25,.03),0 4px 12px rgba(20,30,25,.04);overflow:hidden}
+.changelog-head{padding:14px 16px 10px;font-size:.92em;font-weight:700;color:var(--text);display:flex;align-items:center;gap:6px}
+.changelog-list{max-height:300px;overflow-y:auto;-webkit-overflow-scrolling:touch}
+.chg-empty{padding:16px;text-align:center;color:var(--text-3);font-size:.82em}
+.chg-item{display:flex;align-items:baseline;gap:8px;padding:9px 16px;border-top:1px solid var(--border-soft,#F2F0EB);font-size:.84em;line-height:1.5}
+.chg-user{flex-shrink:0;font-weight:700;color:var(--primary,#0F766E);max-width:90px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.chg-action{flex:1;min-width:0;color:var(--text);word-break:break-word}
+.chg-time{flex-shrink:0;font-size:.74em;color:var(--text-3);white-space:nowrap}
+
+/* ============ 首次进入用户名门槛 ============ */
+.name-gate{position:fixed;inset:0;z-index:10000;background:linear-gradient(135deg,#0B6E99,#0D7D6B);display:flex;align-items:center;justify-content:center;padding:24px}
+.name-gate-card{background:#fff;border-radius:20px;padding:28px 22px;width:100%;max-width:360px;box-shadow:0 12px 40px rgba(0,0,0,.2);text-align:center}
+.name-gate-title{font-size:18px;font-weight:700;color:#1F2A27;margin-bottom:8px}
+.name-gate-sub{font-size:13px;color:#6E7470;margin-bottom:20px;line-height:1.7}
+.name-gate-sub b{color:#0D7D6B}
+.name-gate input{width:100%;padding:13px 14px;border:1.5px solid #D8D5CE;border-radius:12px;font-size:16px;text-align:center;outline:none;box-sizing:border-box;background:#FAFAF8}
+.name-gate input:focus{border-color:#0D7D6B;background:#fff}
+.name-gate-btn{margin-top:14px;width:100%;padding:13px;border:none;border-radius:12px;background:#0D7D6B;color:#fff;font-size:15px;font-weight:600;cursor:pointer;min-height:46px}
+.name-gate-btn:active{opacity:.85}
+.name-gate-tip{margin-top:12px;font-size:11px;color:#A6ABA8}
+.name-gate input.shake{animation:gateShake .3s}
+@keyframes gateShake{0%,100%{transform:translateX(0)}25%{transform:translateX(-6px)}75%{transform:translateX(6px)}}
+
+/* 小票上传人（只读展示） */
+.r-user-fixed{padding:10px 12px;background:#F0F4F1;border:1px solid #E0E7E2;border-radius:10px;font-size:.92em;font-weight:600;color:var(--text)}
 
 /* ============ 打印 ============ */
 @media print{
