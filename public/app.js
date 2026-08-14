@@ -53,11 +53,53 @@ function saveOrder(order) {
 // ============================================================
 // 数据加载 & 渲染
 // ============================================================
+// 本地缓存：首次加载后存 localStorage，再次进入先显示缓存再后台更新（秒开）
+const CACHE_KEY = "trip_data_cache_v1";
+
+function loadCache() {
+  try {
+    const raw = localStorage.getItem(CACHE_KEY);
+    if (!raw) return null;
+    const d = JSON.parse(raw);
+    return d && typeof d === "object" ? d : null;
+  } catch (e) { return null; }
+}
+
+function saveCache(d) {
+  try { localStorage.setItem(CACHE_KEY, JSON.stringify(d)); } catch (e) { /* 存储满等忽略 */ }
+}
+
 async function fetchData() {
-  const res = await fetch("/api/data");
-  if (!res.ok) throw new Error("加载失败");
-  data = await res.json();
-  renderAll();
+  // 1) 有本地缓存 → 立即渲染（秒开），随后后台拉最新
+  const cached = loadCache();
+  if (cached) {
+    data = cached;
+    renderAll();
+    setSync("online", "已加载本地缓存");
+  } else {
+    setSync("offline", "加载中…");
+  }
+  // 2) 拉取服务器最新
+  try {
+    const res = await fetch("/api/data");
+    if (!res.ok) throw new Error("加载失败");
+    const fresh = await res.json();
+    const same = data && data.version === fresh.version && data.lastUpdated === fresh.lastUpdated;
+    data = fresh;
+    saveCache(fresh);
+    if (same) {
+      setSync("online", "实时同步中");
+    } else {
+      renderAll();
+      setSync("online", "实时同步中");
+    }
+  } catch (e) {
+    if (!data) {
+      setSync("offline", "加载失败，请刷新");
+      throw e;
+    }
+    setSync("offline", "网络异常，展示缓存数据");
+  }
 }
 
 let componentsBuilt = false; // 组件骨架是否已构建
@@ -1000,6 +1042,15 @@ function renderReceipts() {
     </div>`).join("");
   container.innerHTML = html;
 
+  // 点击缩略图 → 全屏查看
+  container.querySelectorAll(".rc-thumb").forEach((img) => {
+    img.addEventListener("click", (e) => {
+      e.stopPropagation();
+      $("lightbox-img").src = img.src;
+      $("lightbox").style.display = "flex";
+      lockScroll(true);
+    });
+  });
   // 编辑/删除（委托）
   container.querySelectorAll('[data-act="edit-receipt"]').forEach((b) => {
     b.addEventListener("click", (e) => { e.stopPropagation(); openReceiptModal(b.closest(".rc-card").dataset.id); });
@@ -1085,6 +1136,17 @@ function openReceiptModal(id) {
   }
   $("btn-del-receipt").style.display = r ? "" : "none";
   $("modal-receipt-overlay").style.display = "flex";
+}
+
+// 页面滚动锁定：弹窗/图片查看打开时禁止背景滚动（避免输入时晃动）
+function lockScroll(lock) {
+  document.body.classList.toggle("modal-open", lock);
+}
+
+// lightbox 关闭
+function closeLightbox() {
+  $("lightbox").style.display = "none";
+  lockScroll(false);
 }
 
 function closeReceiptModal() {
@@ -1191,6 +1253,7 @@ async function poll() {
     if (!data || freshKey !== curKey) {
       // 只更新内容，不重建骨架 → iframe 位置组件不闪烁、拖拽顺序不丢
       data = fresh;
+      saveCache(fresh);
       renderContent();
     }
     setSync("online", "实时同步中");
@@ -1241,6 +1304,21 @@ document.addEventListener("DOMContentLoaded", () => {
       }
     }
   });
+
+  // 图片查看：点击遮罩/关闭按钮关闭
+  $("lightbox").addEventListener("click", (e) => { if (e.target === e.currentTarget) closeLightbox(); });
+  $("lightbox-close").addEventListener("click", closeLightbox);
+
+  // 统一滚动锁定：监听所有弹窗的显示状态，自动锁/解锁 body 滚动
+  (() => {
+    const apply = () => {
+      const anyOpen = [...document.querySelectorAll(".modal-overlay, #lightbox")].some((o) => o.style.display === "flex");
+      lockScroll(anyOpen);
+    };
+    const mo = new MutationObserver(apply);
+    document.querySelectorAll(".modal-overlay, #lightbox").forEach((o) => mo.observe(o, { attributes: true, attributeFilter: ["style"] }));
+    apply();
+  })();
 
   // 退税小票弹窗
   $("btn-cancel-receipt").addEventListener("click", closeReceiptModal);
