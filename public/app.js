@@ -312,11 +312,31 @@ function modalEnterToSave(overlayId, saveBtnId) {
   });
 }
 
+// 名字同时存 localStorage + cookie（双保险）：iOS 独立模式/隐私模式等环境下
+// 即使 localStorage 被清，cookie 仍在；读取时自动迁移回 localStorage
 function getUserName() {
-  try { return (localStorage.getItem(USER_KEY) || "").trim(); } catch (e) { return ""; }
+  try {
+    const v = (localStorage.getItem(USER_KEY) || "").trim();
+    if (v) return v;
+  } catch (e) { /* ignore */ }
+  try {
+    const m = document.cookie.match(/(?:^|;\s*)trip_user_name=([^;]+)/);
+    if (m) {
+      const v = decodeURIComponent(m[1]).trim();
+      if (v) {
+        try { localStorage.setItem(USER_KEY, v); } catch (e2) { /* ignore */ }
+        return v;
+      }
+    }
+  } catch (e) { /* ignore */ }
+  return "";
 }
 function setUserName(name) {
-  try { localStorage.setItem(USER_KEY, String(name || "").trim()); } catch (e) {}
+  const v = String(name || "").trim();
+  try { localStorage.setItem(USER_KEY, v); } catch (e) { /* ignore */ }
+  try {
+    document.cookie = USER_KEY + "=" + encodeURIComponent(v) + "; max-age=31536000; path=/; SameSite=Lax";
+  } catch (e) { /* ignore */ }
 }
 
 let data = null;               // 当前数据快照
