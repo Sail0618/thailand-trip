@@ -3,7 +3,7 @@
 // - 离线缓存页面外壳（网络优先，离线回退缓存）
 // - 只缓存静态资源，不缓存 /api 接口
 // ============================================================
-const CACHE = "thailand-trip-v2"; // 强制清理旧缓存，确保拿到修复后的 app.js
+const CACHE = "thailand-trip-v3"; // 换新 logo，强制清理旧缓存
 const SHELL = [
   "/",
   "/index.html",
