@@ -293,6 +293,14 @@ document.addEventListener("DOMContentLoaded", () => {
     if (sharing) stopSharing();
     else startSharing();
   });
+  // 名字改动：已共享时即时更新并重新上报
+  $("my-name").addEventListener("change", () => {
+    const v = $("my-name").value.trim();
+    if (!v) return;
+    myName = v;
+    localStorage.setItem("trip_myname", myName);
+    if (sharing) uploadPosition();
+  });
   // 页面离开时停止（避免后台继续请求）
   window.addEventListener("beforeunload", () => { if (sharing) stopSharing(); });
 
@@ -300,37 +308,18 @@ document.addEventListener("DOMContentLoaded", () => {
   // 地图就绪后先拉一次成员
   setTimeout(refreshMembers, 2500);
 
-  // === 自动开始：如果浏览器已授权定位 且 记住了名字，进入即自动共享 ===
-  autoStartIfPermitted();
+  // === 打开页面默认自动开始共享（无需点击） ===
+  autoStartSharing();
 });
 
-// 检查浏览器定位授权状态，已授权则自动开始共享
-async function autoStartIfPermitted() {
-  // 没有记住名字则不自动开始（仍需用户输入名字）
-  if (!localStorage.getItem("trip_myname")) return;
-
-  try {
-    // 查询定位权限状态
-    if (navigator.permissions && navigator.permissions.query) {
-      const status = await navigator.permissions.query({ name: "geolocation" });
-      if (status.state === "granted") {
-        // 已授权 → 自动开始共享（地图就绪后）
-        waitForMapThenStart();
-      } else {
-        $("loc-status").textContent = '请点"开始共享位置"授权定位';
-      }
-      // 监听权限变化：用户授权时自动开始
-      status.onchange = () => {
-        if (status.state === "granted" && !sharing) waitForMapThenStart();
-      };
-    } else {
-      // 浏览器不支持 permissions API，尝试直接开始
-      waitForMapThenStart();
-    }
-  } catch (e) {
-    // permissions API 不支持，走手动
-    $("loc-status").textContent = '请点"开始共享位置"';
+// 默认自动开始：没有名字就分配一个"游客+数字"，地图就绪后直接开始
+function autoStartSharing() {
+  if (!myName) {
+    myName = "游客" + Math.floor(1000 + Math.random() * 9000);
+    localStorage.setItem("trip_myname", myName);
+    $("my-name").value = myName;
   }
+  waitForMapThenStart();
 }
 
 // 等待地图初始化完成后再自动开始共享
@@ -339,15 +328,11 @@ function waitForMapThenStart() {
   const MAX_WAIT = 15; // 最多等 15 次（约 12 秒），地图还没就绪就放弃自动开始
   const tryStart = () => {
     if (sharing) return;
-    // 名字从 localStorage 恢复
-    const saved = localStorage.getItem("trip_myname");
-    if (!saved) return;
-    $("my-name").value = saved;
     // 如果地图还没就绪，等待（带超时，避免地图加载失败时无限循环）
     if (!map) {
       attempts++;
       if (attempts > MAX_WAIT) {
-        $("loc-status").textContent = '地图未就绪，请手动点"开始共享位置"';
+        $("loc-status").textContent = '地图未就绪，请点"开始共享位置"重试';
         return;
       }
       setTimeout(tryStart, 800);
