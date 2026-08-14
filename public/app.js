@@ -80,6 +80,10 @@ $("btn-install").addEventListener("click", async () => {
 });
 $("btn-install-close").addEventListener("click", () => { $("modal-install-overlay").style.display = "none"; });
 $("modal-install-overlay").addEventListener("click", (e) => { if (e.target === e.currentTarget) $("modal-install-overlay").style.display = "none"; });
+
+  // 初始判断一次（iPhone 不会触发 beforeinstallprompt，必须有这里才会显示）
+  showInstallBtn();
+  watchStandaloneMode();
 }
 
 // 服务器数据是否应覆盖本地缓存
