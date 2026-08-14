@@ -123,17 +123,7 @@ input,select{font-family:inherit}
 }
 .add-btn:hover{background:#D8EFEA}
 .add-btn:active{transform:scale(.95)}
-.sort-btn{
-  background:var(--bg);border:1px solid var(--border-2);color:var(--text-2);
-  width:32px;height:32px;border-radius:9px;font-size:.9em;cursor:pointer;
-  display:flex;align-items:center;justify-content:center;line-height:1;
-  transition:background .15s,color .15s;
-}
-.sort-btn:hover{background:var(--primary-l);color:var(--primary)}
-.sort-btn:disabled{opacity:.35;cursor:default;background:var(--bg);color:var(--text-3)}
-/* 触屏：隐藏拖拽手柄，显示排序按钮；桌面：保留拖拽，隐藏排序按钮 */
-@media(hover:none){.drag-handle{display:none}}
-@media(hover:hover){.comp-actions .sort-btn{display:none}}
+/* 排序按钮已移除：改为触屏长按 ⋮⋮ 拖拽排序 */
 
 /* ============ 航班卡片 ============ */
 .flight-list{display:grid;grid-template-columns:1fr;gap:10px}
@@ -379,7 +369,6 @@ body.modal-open{overflow:hidden}
   .section-body{padding:12px}
 
   .add-btn{padding:10px 14px;font-size:.78em;min-height:40px}
-  .sort-btn{width:38px;height:38px;font-size:1em}
 
   .flight-list{gap:8px}
   .flight-card{padding:12px 13px;border-radius:12px}
@@ -440,6 +429,6 @@ body.modal-open{overflow:hidden}
 @media print{
   .hero{padding:20px}
   .section,.day-card{box-shadow:none;border:1px solid var(--border-2)}
-  .btn,.btn-icon,.add-btn,.sort-btn,.toolbar{display:none}
+  .btn,.btn-icon,.add-btn,.toolbar{display:none}
   .day-body{display:block!important}
 }

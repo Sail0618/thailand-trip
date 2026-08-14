@@ -190,8 +190,6 @@ function renderComponents() {
           <span class="section-hint">${escapeHtml(c.hint)}</span>
           <span class="comp-actions">
             ${c.addBtn ? `<button class="add-btn" id="${c.addBtn}" title="新增" aria-label="新增">＋ 新增</button>` : ""}
-            <button class="sort-btn" data-sort="up" title="上移" aria-label="上移">↑</button>
-            <button class="sort-btn" data-sort="down" title="下移" aria-label="下移">↓</button>
           </span>
           <span class="comp-chevron" aria-hidden="true"></span>
         </div>
@@ -200,8 +198,53 @@ function renderComponents() {
   }).join("");
 
   setupDragSort(container);
-  setupSortButtons(container);
+  setupTouchDrag(container);
   setupComponentToggle(container);
+}
+
+// ============================================================
+// 触屏拖拽排序（手机：长按 ⋮⋮ 手柄拖动换序，替代原 ↑↓ 按钮）
+// ============================================================
+function setupTouchDrag(container) {
+  if (!("ontouchstart" in window)) return;
+  container.querySelectorAll(".drag-handle").forEach((handle) => {
+    let dragCard = null;
+    handle.addEventListener("touchstart", (e) => {
+      const card = handle.closest(".component-card");
+      if (!card) return;
+      dragCard = card;
+      card.classList.add("dragging");
+      e.preventDefault();
+    }, { passive: false });
+
+    handle.addEventListener("touchmove", (e) => {
+      if (!dragCard) return;
+      const y = e.touches[0].clientY;
+      const cards = Array.from(container.querySelectorAll(".component-card"));
+      const over = cards.find((c) => {
+        if (c === dragCard) return false;
+        const r = c.getBoundingClientRect();
+        return y >= r.top && y <= r.bottom;
+      });
+      if (over) {
+        const r = over.getBoundingClientRect();
+        const before = y < r.top + r.height / 2;
+        container.insertBefore(dragCard, before ? over : over.nextSibling);
+      }
+      e.preventDefault();
+    }, { passive: false });
+
+    const end = () => {
+      if (!dragCard) return;
+      dragCard.classList.remove("dragging");
+      const newOrder = Array.from(container.querySelectorAll(".component-card"))
+        .map((c) => c.dataset.comp);
+      if (new Set(newOrder).size === COMPONENTS.length) saveOrder(newOrder);
+      dragCard = null;
+    };
+    handle.addEventListener("touchend", end);
+    handle.addEventListener("touchcancel", end);
+  });
 }
 
 // ============================================================
@@ -224,8 +267,8 @@ function setupComponentToggle(container) {
       }
     };
     h.addEventListener("click", (e) => {
-      // 点击拖拽手柄 / 新增 / 排序按钮时不切换折叠
-      if (e.target.closest(".drag-handle, .add-btn, .sort-btn")) return;
+      // 点击拖拽手柄 / 新增按钮时不切换折叠
+      if (e.target.closest(".drag-handle, .add-btn")) return;
       toggle();
     });
     h.addEventListener("keydown", (e) => {
@@ -330,43 +373,6 @@ function setupDragSort(container) {
       if (ids.size === COMPONENTS.length) saveOrder(newOrder);
     });
   });
-}
-
-// ============================================================
-// 触屏排序按钮（iPhone 等不支持 HTML5 拖拽，用 ↑↓ 按钮代替）
-// ============================================================
-function setupSortButtons(container) {
-  function refreshBtnState() {
-    const cards = Array.from(container.querySelectorAll(".component-card"));
-    cards.forEach((card, idx) => {
-      const up = card.querySelector('[data-sort="up"]');
-      const down = card.querySelector('[data-sort="down"]');
-      if (up) up.disabled = idx === 0;
-      if (down) down.disabled = idx === cards.length - 1;
-    });
-  }
-
-  container.querySelectorAll(".sort-btn").forEach((btn) => {
-    btn.addEventListener("click", () => {
-      const card = btn.closest(".component-card");
-      const cards = Array.from(container.querySelectorAll(".component-card"));
-      const idx = cards.indexOf(card);
-      const dir = btn.dataset.sort === "up" ? -1 : 1;
-      const toIdx = idx + dir;
-      if (toIdx < 0 || toIdx >= cards.length) return;
-      // 交换 DOM 位置
-      const target = cards[toIdx];
-      if (dir < 0) container.insertBefore(card, target);
-      else container.insertBefore(card, target.nextSibling);
-      // 保存顺序
-      const newOrder = Array.from(container.querySelectorAll(".component-card"))
-        .map((c) => c.dataset.comp);
-      if (new Set(newOrder).size === COMPONENTS.length) saveOrder(newOrder);
-      refreshBtnState();
-    });
-  });
-
-  refreshBtnState();
 }
 
 // ============================================================
