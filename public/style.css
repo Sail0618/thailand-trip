@@ -430,15 +430,20 @@ body.modal-open{overflow:hidden}
   to{transform:translateY(0)}
 }
 
-/* ============ 操作变更记录 ============ */
-.changelog{margin:18px 0 6px;background:var(--card,#fff);border:1px solid var(--border,#ECEAE5);border-radius:16px;box-shadow:0 1px 2px rgba(20,30,25,.03),0 4px 12px rgba(20,30,25,.04);overflow:hidden}
-.changelog-head{padding:14px 16px 10px;font-size:.92em;font-weight:700;color:var(--text);display:flex;align-items:center;gap:6px}
-.changelog-list{max-height:300px;overflow-y:auto;-webkit-overflow-scrolling:touch}
+/* ============ 操作变更记录（入口 + 管理员密码） ============ */
+.log-entry{margin-top:12px;display:inline-block;background:none;border:1px solid var(--border-2,#E0DDD6);color:var(--text-2,#6E7470);font-size:.78em;padding:6px 14px;border-radius:999px;cursor:pointer;font-family:inherit;transition:color .15s,border-color .15s}
+.log-entry:active{color:var(--primary,#0F766E);border-color:var(--primary,#0F766E)}
+.modal-sm{max-width:320px}
+.modal-log{max-width:520px;height:min(72vh,560px);display:flex;flex-direction:column}
+.modal-log .modal-body{flex:1;overflow:hidden;display:flex;flex-direction:column}
+.log-body{flex:1;overflow:hidden}
+.changelog-list{max-height:100%;height:100%;overflow-y:auto;-webkit-overflow-scrolling:touch}
 .chg-empty{padding:16px;text-align:center;color:var(--text-3);font-size:.82em}
 .chg-item{display:flex;align-items:baseline;gap:8px;padding:9px 16px;border-top:1px solid var(--border-soft,#F2F0EB);font-size:.84em;line-height:1.5}
 .chg-user{flex-shrink:0;font-weight:700;color:var(--primary,#0F766E);max-width:90px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .chg-action{flex:1;min-width:0;color:var(--text);word-break:break-word}
 .chg-time{flex-shrink:0;font-size:.74em;color:var(--text-3);white-space:nowrap}
+.pwd-err{color:#C62828;font-size:.8em;margin-top:8px}
 
 /* ============ 首次进入用户名门槛 ============ */
 .name-gate{position:fixed;inset:0;z-index:10000;background:linear-gradient(135deg,#0B6E99,#0D7D6B);display:flex;align-items:center;justify-content:center;padding:24px}

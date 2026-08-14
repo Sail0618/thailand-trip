@@ -149,6 +149,19 @@ if (EXPORT_MODE) initExportPage();
 // 全局用户名：首次进入输入一次，用于位置共享/退税小票等所有功能
 // ============================================================
 const USER_KEY = "trip_user_name";
+
+// ============================================================
+// 操作日志：入口 + 管理员密码（SHA-256 校验，不存明文）
+// ============================================================
+const ADMIN_PASSWORD_HASH = "102f41444cd745e414917d4eed6ab1af4330e02ec3dfc315837741eeea8e7636"; // 595792
+async function sha256hex(str) {
+  try {
+    const buf = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(String(str)));
+    return Array.from(new Uint8Array(buf)).map((b) => b.toString(16).padStart(2, "0")).join("");
+  } catch (e) {
+    return String(str); // 非 https/不支持时退化为原文比较
+  }
+}
 function getUserName() {
   try { return (localStorage.getItem(USER_KEY) || "").trim(); } catch (e) { return ""; }
 }
@@ -179,7 +192,7 @@ const COMPONENTS = [
   { id: "flights",   title: "航班总览",   color: "flight",  hint: "点击卡片可编辑 · 实时同步", order: 0, addBtn: "btn-add-flight" },
   { id: "location",  title: "位置共享",    color: "location", hint: "授权后自动展示队友位置", order: 1 },
   { id: "days",      title: "每日行程",    color: "tip",     hint: "共 11 天 · 点击展开", order: 2 },
-  { id: "todos",     title: "待办事项",    color: "alert",   hint: "点击勾选 · 多人同步", order: 3, addBtn: "btn-add-todo" },
+  { id: "todos",     title: "待办事项",    color: "alert",   hint: "点击可编辑 · 按日期排序", order: 3, addBtn: "btn-add-todo" },
   { id: "budget",    title: "实际账单",    color: "budget",  hint: "¥ / ฿ 双币统计 · 点击修改", order: 4, addBtn: "btn-add-bill" },
   { id: "receipts",  title: "退税小票",    color: "receipt",  hint: "拍照上传 · 按人分组", order: 5, addBtn: "btn-add-receipt" }
 ];
@@ -279,7 +292,6 @@ function renderContent() {
   if (!editingTodoDateId) renderTodos();
   if (!editingBudgetId) renderBudget();
   if (!editingReceiptId) renderReceipts();
-  renderChangelog();
 }
 
 // ============================================================
@@ -295,7 +307,7 @@ function fmtChangeTime(ts) {
 }
 
 function renderChangelog() {
-  const el = $("changelog-list");
+  const el = $("log-list");
   if (!el) return;
   const list = (data && data.changelog) || [];
   if (!list.length) {
@@ -801,12 +813,25 @@ function delDay() {
 // ============================================================
 // 待办渲染
 // ============================================================
+function todoSortKey(t) {
+  const s = String(t.date || "").trim();
+  if (!s) return 9999; // 无日期排最后
+  let m = s.match(/^(\d{4})-(\d{1,2})-(\d{1,2})/); // 2026-09-30
+  if (m) return Number(m[2]) * 100 + Number(m[3]);
+  m = s.match(/(\d{1,2})[/\-.]\s*(\d{1,2})/); // 9/25-26 / 10/1 / 9/30 & 10/3
+  if (m) return Number(m[1]) * 100 + Number(m[2]);
+  return 9999;
+}
+
 function renderTodos() {
   const container = $("todos-container");
   if (!container) return;
-  container.innerHTML = `<div class="todos-list">` + (data.todos || []).map((t) => `
-    <div class="todo-item ${t.done ? "done" : ""}" data-id="${escapeHtml(t.id)}">
-      <div class="checkbox">✓</div>
+  const sorted = [...(data.todos || [])].sort(
+    (a, b) => todoSortKey(a) - todoSortKey(b) || String(a.text || "").localeCompare(String(b.text || ""), "zh")
+  );
+  container.innerHTML = `<div class="todos-list">` + sorted.map((t) => `
+    <div class="todo-item ${t.done ? "done" : ""}" data-id="${escapeHtml(t.id)}" title="点击编辑待办">
+      <div class="checkbox" data-act="toggle-todo">✓</div>
       <div class="todo-main">
         <div class="txt">${escapeHtml(t.text)}</div>
         <div class="todo-meta">
@@ -818,31 +843,55 @@ function renderTodos() {
     </div>`).join("") + `</div>`;
 
   container.querySelectorAll(".todo-item").forEach((item) => {
-    item.addEventListener("click", (e) => {
-      if (e.target.closest('[data-act="del-todo"]')) return;
-      if (e.target.closest('[data-edit-date]')) return; // 日期点击单独处理
-      const id = item.dataset.id;
+    const id = item.dataset.id;
+    // 勾选：只点复选框切换完成状态
+    const cb = item.querySelector('[data-act="toggle-todo"]');
+    if (cb) cb.addEventListener("click", (e) => {
+      e.stopPropagation();
       const todo = data.todos.find((t) => t.id === id);
       if (!todo) return;
       todo.done = !todo.done;
       renderTodos();
       apiPost(`/api/todos/${id}`, { done: todo.done, version: data.version });
     });
+    // 点击卡片主体：打开编辑弹窗
+    item.addEventListener("click", (e) => {
+      if (e.target.closest('[data-act="del-todo"]')) return;
+      if (e.target.closest('[data-act="toggle-todo"]')) return;
+      if (e.target.closest('[data-edit-date]')) return; // 日期点击单独处理
+      openTodoModal(id);
+    });
     const delBtn = item.querySelector('[data-act="del-todo"]');
     if (delBtn) delBtn.addEventListener("click", (e) => {
       e.stopPropagation();
       if (confirm("删除这条待办？")) {
-        data.todos = data.todos.filter((t) => t.id !== item.dataset.id);
+        data.todos = data.todos.filter((t) => t.id !== id);
         renderTodos();
-        apiDelete(`/api/todos/${item.dataset.id}`);
+        apiDelete(`/api/todos/${id}`);
       }
     });
     const dateEl = item.querySelector('[data-edit-date]');
     if (dateEl) dateEl.addEventListener("click", (e) => {
       e.stopPropagation();
-      startTodoDateEdit(item.dataset.id, dateEl);
+      startTodoDateEdit(id, dateEl);
     });
   });
+}
+
+// 打开待办编辑/新增弹窗（id 为空=新增）
+function openTodoModal(id) {
+  editingTodoId = id || null;
+  const todo = id ? data.todos.find((t) => t.id === id) : null;
+  editingTodoOrigDate = todo ? (todo.date || "") : "";
+  const isIso = /^\d{4}-\d{2}-\d{2}$/.test(editingTodoOrigDate);
+  const title = document.querySelector("#modal-todo-overlay .modal-header");
+  if (title) title.textContent = todo ? "编辑待办" : "新增待办";
+  $("t-text").value = todo ? (todo.text || "") : "";
+  $("t-category").value = todo ? (todo.category || "其他") : "其他";
+  $("t-date").value = isIso ? editingTodoOrigDate : "";
+  $("t-date").placeholder = (!isIso && editingTodoOrigDate) ? `当前：${editingTodoOrigDate}` : "";
+  $("modal-todo-overlay").style.display = "flex";
+  setTimeout(() => $("t-text").focus(), 60);
 }
 
 // 独立编辑待办日期（原生日期选择器）
@@ -939,6 +988,8 @@ function renderBudget() {
 // 汇率换算（¥ ⇄ ฿）
 // ============================================================
 let editingTodoDateId = null; // 待办日期输入中（轮询不重建）
+let editingTodoId = null;      // 待办编辑弹窗中（null=新增，有值=编辑该条）
+let editingTodoOrigDate = ""; // 编辑前原始日期（非 ISO 格式如 9/25-26 无法显示在 date 输入框，保存时保留）
 
 // 日期显示：ISO → "9/30 周三"
 function fmtDate(v) {
@@ -1122,6 +1173,7 @@ function openNewFlightModal() {
 }
 
 function closeModal() {
+  editingTodoId = null; // 关闭待办弹窗时重置编辑态
   $("modal-overlay").style.display = "none";
   $("modal-todo-overlay").style.display = "none";
   $("modal-bill-overlay").style.display = "none";
@@ -1529,6 +1581,34 @@ function bootApp() {
   $("btn-cancel-fx").addEventListener("click", closeModal);
   $("modal-fx-overlay").addEventListener("click", (e) => { if (e.target === e.currentTarget) closeModal(); });
 
+  // 操作日志入口：先验证管理员密码
+  $("btn-log").addEventListener("click", () => {
+    $("pwd-input").value = "";
+    $("pwd-err").style.display = "none";
+    $("modal-pwd-overlay").style.display = "flex";
+    setTimeout(() => $("pwd-input").focus(), 60);
+  });
+  $("btn-pwd-cancel").addEventListener("click", () => { $("modal-pwd-overlay").style.display = "none"; });
+  $("modal-pwd-overlay").addEventListener("click", (e) => { if (e.target === e.currentTarget) $("modal-pwd-overlay").style.display = "none"; });
+  $("btn-pwd-ok").addEventListener("click", async () => {
+    const val = $("pwd-input").value;
+    const h = await sha256hex(val);
+    if (h === ADMIN_PASSWORD_HASH) {
+      $("modal-pwd-overlay").style.display = "none";
+      renderChangelog();
+      $("modal-log-overlay").style.display = "flex";
+    } else {
+      $("pwd-err").style.display = "block";
+      $("pwd-input").value = "";
+      $("pwd-input").focus();
+    }
+  });
+  $("pwd-input").addEventListener("keydown", (e) => {
+    if (e.key === "Enter") { e.preventDefault(); $("btn-pwd-ok").click(); }
+  });
+  $("btn-log-close").addEventListener("click", () => { $("modal-log-overlay").style.display = "none"; });
+  $("modal-log-overlay").addEventListener("click", (e) => { if (e.target === e.currentTarget) $("modal-log-overlay").style.display = "none"; });
+
   // 航班行操作（委托）：点击任意单元格打开编辑弹窗
   document.addEventListener("click", (e) => {
     const card = e.target.closest(".flight-card");
@@ -1615,9 +1695,7 @@ function bootApp() {
     if (!addBtn) return;
     if (addBtn.id === "btn-add-flight") openNewFlightModal();
     else if (addBtn.id === "btn-add-todo") {
-      $("t-text").value = "";
-      $("t-date").value = "";
-      $("modal-todo-overlay").style.display = "flex";
+      openTodoModal(null);
     } else if (addBtn.id === "btn-add-bill") {
       $("b-item").value = "";
       $("b-detail").value = "";
@@ -1665,9 +1743,21 @@ function bootApp() {
     const category = $("t-category").value;
     const date = $("t-date").value;
     if (!text) return;
-    data.todos.push({ id: genId("t"), category, text, date, done: false });
-    renderTodos();
-    apiPost("/api/todos", { text, category, date, version: data ? data.version : undefined });
+    if (editingTodoId) {
+      const todo = data.todos.find((t) => t.id === editingTodoId);
+      if (todo) {
+        // 非 ISO 日期（如 9/25-26）无法在 date 输入框显示：未改动时保留原日期，避免被清空
+        const finalDate = date || (editingTodoOrigDate && !/^\d{4}-\d{2}-\d{2}$/.test(editingTodoOrigDate) ? editingTodoOrigDate : "");
+        Object.assign(todo, { text, category, date: finalDate });
+        renderTodos();
+        apiPost(`/api/todos/${editingTodoId}`, { text, category, date: finalDate, version: data ? data.version : undefined });
+      }
+    } else {
+      data.todos.push({ id: genId("t"), category, text, date, done: false });
+      renderTodos();
+      apiPost("/api/todos", { text, category, date, version: data ? data.version : undefined });
+    }
+    editingTodoId = null;
     closeModal();
   });
 
