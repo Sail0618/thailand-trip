@@ -7,8 +7,10 @@
 //    存储使用 EdgeOne KV（绑定变量名 THAILAND_KV，key = "data"）。
 //  - 仅使用标准 Web API（fetch / Request / Response / URL），
 //    无 Node 内置模块，可在 Edge Functions（V8）环境运行。
-//  - KV 为空时：若配置了 JSONBIN_BIN_ID / JSONBIN_API_KEY 环境变量，
-//    则自动从 JSONBin 一次性迁移现有数据；否则使用初始数据。
+//  - KV 为空时：只初始化内置模板（绝不自动从 JSONBin 覆盖，避免旧快照覆盖新数据）。
+//    需要从 JSONBin 迁移请手动调用 POST /api/migrate（需 confirm:true，覆盖前先备份）。
+//  - 每次写入前自动把被替换的旧版本存入 KV key "data_history"（保留最近 20 份），
+//    可通过 GET /api/data/history 查询，防止覆盖/误删无法找回。
 //  - 测试：node --test test/edgeone-functions.test.js
 // ============================================================
 
@@ -17,6 +19,8 @@ import { initialData } from "./initial-data.mjs";
 // ---------- 常量（与 server.js 保持一致） ----------
 const STATUS_OPTIONS = ["已订", "待定", "已取消"];
 const DATA_KEY = "data";
+const HISTORY_KEY = "data_history";
+const HISTORY_LIMIT = 20; // 历史快照最多保留份数
 const FX_KEY = "fx_live";
 const STALE_LOCATION_MS = 10 * 60 * 1000; // 10 分钟
 const FX_API_URL = "https://open.er-api.com/v6/latest/CNY";
@@ -144,7 +148,7 @@ async function jsonbinSave(env, data) {
   if (!res.ok) throw new Error("JSONBin 写入失败 HTTP " + res.status);
 }
 
-// 从 JSONBin 一次性迁移（仅当 KV 为空且配置了 JSONBIN 环境变量时）
+// 从 JSONBin 一次性迁移（只允许手动触发，绝不自动覆盖 KV）
 async function migrateFromJsonbin(env) {
   try {
     return await jsonbinLoad(env);
@@ -154,25 +158,33 @@ async function migrateFromJsonbin(env) {
   }
 }
 
-// 判断是否为"未初始化模板"（内置初始数据，尚无真实写入）
-// 特征：version <= 0 且 lastUpdated 为空。真实保存过的数据 version>=1 且带时间戳。
-function isUninitializedTemplate(data) {
-  return !data || (Number(data.version) <= 0 && !data.lastUpdated);
+// 保存历史快照：把将被替换的旧数据追加到 data_history（保留最近 HISTORY_LIMIT 份）
+async function pushHistory(kv, prevData) {
+  if (!kv) return;
+  try {
+    const history = (await kvGet(kv, HISTORY_KEY)) || [];
+    history.push({
+      version: Number(prevData && prevData.version) || 0,
+      lastUpdated: (prevData && prevData.lastUpdated) || null,
+      savedAt: Date.now(),
+      data: clone(prevData)
+    });
+    while (history.length > HISTORY_LIMIT) history.shift();
+    await kvPut(kv, HISTORY_KEY, history);
+  } catch (e) {
+    console.error("历史备份失败：" + (e && e.message));
+  }
 }
 
 async function load(kv, env) {
   if (kv) {
     let data = await kvGet(kv, DATA_KEY);
     if (!data) {
-      data = (await migrateFromJsonbin(env)) || clone(initialData);
+      // KV 为空：只初始化内置模板。
+      // 绝不自动从 JSONBin 覆盖 —— 曾因"模板自动重迁移"用旧快照覆盖真实数据导致丢数据。
+      // 需要迁移请手动调用 POST /api/migrate。
+      data = clone(initialData);
       await kvPut(kv, DATA_KEY, data);
-    } else if (isUninitializedTemplate(data) && env && env.JSONBIN_BIN_ID) {
-      // KV 里还是初始模板，但已配置 JSONBin → 重新拉取真实数据覆盖（修复历史误初始化）
-      const migrated = await migrateFromJsonbin(env);
-      if (migrated) {
-        data = migrated;
-        await kvPut(kv, DATA_KEY, data);
-      }
     }
     return normalize(data);
   }
@@ -192,10 +204,21 @@ async function save(kv, env, data) {
 }
 
 async function commit(kv, env, nextStore) {
+  // 先把被替换前的旧版本存入历史（防覆盖/误删丢失）
+  if (kv) {
+    try {
+      const prev = await kvGet(kv, DATA_KEY);
+      if (prev) await pushHistory(kv, prev);
+    } catch (e) { /* 历史备份失败不影响主流程 */ }
+  }
   nextStore.lastUpdated = new Date().toISOString();
   nextStore.version = (Number(nextStore.version) || 0) + 1;
   pruneStaleLocations(nextStore);
   await save(kv, env, nextStore);
+  // 异步备份一份到 JSONBin（如已配置），防 KV 命名空间被清空/重建后无据可依
+  if (kv && env && env.JSONBIN_BIN_ID && env.JSONBIN_API_KEY) {
+    jsonbinSave(env, nextStore).catch((e) => console.error("JSONBin 备份失败：" + (e && e.message)));
+  }
   return nextStore;
 }
 
@@ -335,6 +358,34 @@ function getBlobStore() {
 
 async function handleApi(method, pathname, query, body, kv, env) {
   const seg = pathname.split("/").filter(Boolean).map(safeDecode); // ["api", "data", ...]
+
+  // /api/data/history（读取历史备份，用于数据找回；仅 KV 模式）
+  if (seg[1] === "data" && seg[2] === "history" && seg.length === 3 && method === "GET") {
+    if (!kv) return json({ error: "仅 KV 模式支持历史备份" }, 400);
+    const history = (await kvGet(kv, HISTORY_KEY)) || [];
+    return json(history);
+  }
+
+  // /api/migrate（手动从 JSONBin 一次性迁移，需显式确认；默认绝不自动覆盖）
+  if (seg[1] === "migrate" && seg.length === 2 && method === "POST") {
+    const b = body || {};
+    if (b.source !== "jsonbin" || b.confirm !== true) {
+      return json({ error: '需要 { "source": "jsonbin", "confirm": true }' }, 400);
+    }
+    const migrated = await migrateFromJsonbin(env);
+    if (!migrated) {
+      return json({ error: "JSONBin 无可用数据，或未配置 JSONBIN_BIN_ID / JSONBIN_API_KEY" }, 400);
+    }
+    // 覆盖前先备份当前 KV 数据
+    if (kv) {
+      const prev = await kvGet(kv, DATA_KEY);
+      if (prev) await pushHistory(kv, prev);
+      await kvPut(kv, DATA_KEY, migrated);
+    } else {
+      await jsonbinSave(env, migrated);
+    }
+    return json({ ok: true, version: Number(migrated.version) || 0 });
+  }
 
   // /api/data
   if (seg[1] === "data" && seg.length === 2) {

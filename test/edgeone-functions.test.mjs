@@ -190,22 +190,65 @@ describe("EdgeOne Pages Functions", () => {
     assert.equal(jsonbinRecord.version, 4);
   });
 
-  it("KV 里是初始模板且配置了 JSONBin 时，自动重新迁移真实数据", async () => {
-    // 模拟历史误初始化：KV 里存了初始模板（fxRate=5, version=0）
+  it("KV 里是初始模板时，绝不被 JSONBin 自动覆盖（修复覆盖丢失）", async () => {
+    // 模拟 KV 被重置为初始模板（fxRate=5, version=0）
     kv = new MockKV({ data: JSON.stringify({ flights: [], fxRate: 5, version: 0, lastUpdated: null }) });
-    // JSONBin 里有真实数据
-    jsonbinRecord = { flights: [{ id: "x1", route: "真实航线" }], fxRate: 4.897237, version: 22, lastUpdated: "2026-08-13T08:41:33Z" };
+    // JSONBin 里存的是旧快照
+    jsonbinRecord = { flights: [{ id: "x1", route: "旧快照航线" }], fxRate: 4.897237, version: 22, lastUpdated: "2026-08-13T08:41:33Z" };
     const env = { JSONBIN_BIN_ID: "bin123", JSONBIN_API_KEY: "key123" };
 
     const got = await api("GET", "/api/data", undefined, env);
     assert.equal(got.status, 200);
-    assert.equal(got.json.fxRate, 4.897237);
-    assert.equal(got.json.version, 22);
-    assert.equal(got.json.flights[0].route, "真实航线");
+    // 保持 KV 现有数据，不被 JSONBin 旧快照覆盖
+    assert.equal(got.json.fxRate, 5);
+    assert.equal(got.json.version, 0);
+    assert.equal(got.json.flights.length, 0);
 
-    // KV 应已被真实数据覆盖
+    // KV 未被覆盖
     const stored = JSON.parse(kv.map.get("data"));
-    assert.equal(stored.fxRate, 4.897237);
+    assert.equal(stored.fxRate, 5);
+    assert.equal(stored.version, 0);
+  });
+
+  it("每次写入自动保留历史备份，可查询 /api/data/history", async () => {
+    kv = new MockKV();
+    const first = await api("GET", "/api/data");
+    const v0 = first.json.version;
+    const put = await api("PUT", "/api/data", { version: v0, ...first.json });
+    assert.equal(put.status, 200);
+
+    const hist = await api("GET", "/api/data/history");
+    assert.equal(hist.status, 200);
+    assert.ok(Array.isArray(hist.json));
+    assert.ok(hist.json.length >= 1);
+    assert.equal(hist.json[hist.json.length - 1].version, v0);
+    assert.ok(hist.json[hist.json.length - 1].data);
+    assert.ok(hist.json[hist.json.length - 1].savedAt);
+  });
+
+  it("手动迁移：需显式确认，覆盖前保留历史", async () => {
+    kv = new MockKV();
+    const first = await api("GET", "/api/data");
+    await api("PUT", "/api/data", { version: first.json.version, ...first.json });
+
+    jsonbinRecord = { flights: [{ id: "x1", route: "手动迁移航线" }], fxRate: 4.8, version: 100, lastUpdated: "2026-08-14T00:00:00Z" };
+    const env = { JSONBIN_BIN_ID: "bin123", JSONBIN_API_KEY: "key123" };
+
+    // 未显式确认 → 拒绝
+    const bad = await api("POST", "/api/migrate", { source: "jsonbin" }, env);
+    assert.equal(bad.status, 400);
+
+    // 显式确认 → 迁移成功
+    const ok = await api("POST", "/api/migrate", { source: "jsonbin", confirm: true }, env);
+    assert.equal(ok.status, 200);
+    assert.equal(ok.json.version, 100);
+
+    const got = await api("GET", "/api/data", undefined, env);
+    assert.equal(got.json.flights[0].route, "手动迁移航线");
+
+    // 覆盖前已有历史备份（含原始航班数据）
+    const hist = await api("GET", "/api/data/history", undefined, env);
+    assert.ok(hist.json.some((h) => h.data && h.data.flights && h.data.flights.length > 0));
   });
 
   it("健康检查与未知接口", async () => {
