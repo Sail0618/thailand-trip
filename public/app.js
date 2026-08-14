@@ -332,15 +332,16 @@ const CAT_COLOR = { "机票": "#1976D2", "船票": "#00796B", "住宿": "#F57C00
 // 组件定义（决定顺序，可拖拽调整）
 // ============================================================
 const COMPONENTS = [
-  { id: "flights",   title: "航班总览",   color: "flight",  hint: "点击卡片可编辑 · 实时同步", order: 0, addBtn: "btn-add-flight" },
-  { id: "location",  title: "位置共享",    color: "location", hint: "授权后自动展示队友位置", order: 1 },
-  { id: "days",      title: "每日行程",    color: "tip",     hint: "共 11 天 · 点击展开", order: 2 },
-  { id: "todos",     title: "待办事项",    color: "alert",   hint: "点击可编辑 · 按日期排序", order: 3, addBtn: "btn-add-todo" },
-  { id: "budget",    title: "实际账单",    color: "budget",  hint: "¥ / ฿ 双币统计 · 点击修改", order: 4, addBtn: "btn-add-bill" },
-  { id: "receipts",  title: "退税小票",    color: "receipt",  hint: "拍照上传 · 按人分组", order: 5, addBtn: "btn-add-receipt" }
+  { id: "budget",    title: "团队账单",    color: "budget",  hint: "¥ / ฿ 双币统计 · 点击修改", order: 0, addBtn: "btn-add-bill" },
+  { id: "days",      title: "每日行程",    color: "tip",     hint: "共 11 天 · 点击展开", order: 1 },
+  { id: "receipts",  title: "退税小票",    color: "receipt",  hint: "拍照上传 · 按人分组", order: 2, addBtn: "btn-add-receipt" },
+  { id: "location",  title: "位置共享",    color: "location", hint: "授权后自动展示队友位置", order: 3 },
+  { id: "flights",   title: "航班总览",   color: "flight",  hint: "点击卡片可编辑 · 实时同步", order: 4, addBtn: "btn-add-flight" },
+  { id: "todos",     title: "待办事项",    color: "alert",   hint: "点击可编辑 · 按日期排序", order: 5, addBtn: "btn-add-todo" }
 ];
 
-const ORDER_KEY = "trip_comp_order"; // localStorage 存储拖拽顺序
+// 排序存储 key 加版本号：让新的默认顺序对已有用户生效（旧的自定义排序作废一次）
+const ORDER_KEY = "trip_comp_order_v2";
 
 // 读取排序（优先本地存储，否则默认）
 function getOrder() {

@@ -216,7 +216,7 @@ input,select{font-family:inherit}
 .budget-panel-title{display:flex;justify-content:flex-start;align-items:center;padding:11px 15px;font-weight:700;font-size:.9em;color:var(--text);background:var(--bg);border-bottom:1px solid var(--border)}
 /* 副标题统一元素：同色小圆点（比主标题大圆点小一号，靠大小区分层级） */
 .budget-panel-title::before{content:'';width:7px;height:7px;border-radius:50%;background:var(--acc,#0F766E);flex-shrink:0;margin-right:8px}
-/* 副标题圆点颜色与"实际账单"主标题圆点一致（棕色） */
+/* 副标题圆点颜色与"团队账单"主标题圆点一致（棕色） */
 .budget-panel.cny .budget-panel-title{--acc:#9C6B3A}
 .budget-panel.thb .budget-panel-title{--acc:#9C6B3A}
 .bill-list{padding:2px 15px}
