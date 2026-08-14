@@ -44,6 +44,51 @@ const LOCAL_STORE_FILE =
 // 位置共享：超过该时长未更新的位置视为过期（幽灵成员清理）
 const STALE_LOCATION_MS = 10 * 60 * 1000; // 10 分钟
 
+// 逆地理编码（地址解析）：BigDataCloud 免费服务，支持中文、全球覆盖
+// 仅在 GET /api/locations 时按需解析，内存缓存 30 分钟避免重复请求
+const GEO_ENABLED = process.env.DISABLE_GEOCODING !== "1";
+const GEO_API = "https://api.bigdatacloud.net/data/reverse-geocode-client";
+const GEO_CACHE_TTL_MS = 30 * 60 * 1000;
+const geoCache = new Map(); // "lat,lng" -> { address, at }
+
+// 从 BigDataCloud 返回中拼接中文地址（泰国 → 曼谷 → 区）
+function buildAddress(d) {
+  const parts = [];
+  if (d && d.countryName) parts.push(d.countryName);
+  const region = d && d.principalSubdivision && d.principalSubdivision !== d.countryName ? d.principalSubdivision : "";
+  const city = d && d.city && d.city !== d.principalSubdivision ? d.city : "";
+  const loc = d && d.locality && d.locality !== city && d.locality !== d.principalSubdivision ? d.locality : "";
+  parts.push(region, city, loc);
+  return parts.filter(Boolean).join(" ");
+}
+
+async function resolveAddress(lat, lng) {
+  if (!GEO_ENABLED) return "";
+  const key = Number(lat).toFixed(4) + "," + Number(lng).toFixed(4);
+  const hit = geoCache.get(key);
+  if (hit && Date.now() - hit.at < GEO_CACHE_TTL_MS) return hit.address;
+  try {
+    const url = `${GEO_API}?latitude=${encodeURIComponent(lat)}&longitude=${encodeURIComponent(lng)}&localityLanguage=zh`;
+    const res = await fetch(url, {
+      headers: { "User-Agent": "thailand-trip-shared/1.0" },
+      signal: AbortSignal.timeout(5000)
+    });
+    if (res.ok) {
+      const d = await res.json();
+      const addr = buildAddress(d);
+      if (addr) {
+        geoCache.set(key, { address: addr, at: Date.now() });
+        return addr;
+      }
+    }
+  } catch (e) { /* 解析失败返回空，前端显示占位 */ }
+  return "";
+}
+
+async function withAddresses(list) {
+  return Promise.all(list.map(async (l) => ({ ...l, address: await resolveAddress(l.lat, l.lng) })));
+}
+
 // GET 读缓存：轮询每 4s 一次，命中缓存可大幅减少 JSONBin 请求（配额保护）
 const CACHE_TTL_MS = 2500;
 
@@ -704,11 +749,12 @@ app.delete("/api/locations/:id", route(async (req, res) => {
   res.json({ ok: true, version: saved.version });
 }));
 
-// 获取所有位置（仅返回未过期成员）
+// 获取所有位置（仅返回未过期成员，附逆地理编码地址）
 app.get("/api/locations", route(async (req, res) => {
   const data = await getStore();
   const now = Date.now();
-  res.json((data.locations || []).filter((l) => now - (l.updatedAt || 0) < STALE_LOCATION_MS));
+  const list = (data.locations || []).filter((l) => now - (l.updatedAt || 0) < STALE_LOCATION_MS);
+  res.json(await withAddresses(list));
 }));
 
 // ------------------------------------------------------------

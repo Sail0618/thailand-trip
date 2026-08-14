@@ -11,6 +11,7 @@ const path = require("path");
 // 使用独立的临时存储文件，避免污染真实 data/store.json
 const STORE = path.join(os.tmpdir(), `thailand-trip-test-${process.pid}-${Date.now()}.json`);
 process.env.LOCAL_STORE_FILE = STORE;
+process.env.DISABLE_GEOCODING = "1";
 delete process.env.JSONBIN_API_KEY;
 delete process.env.JSONBIN_BIN_ID;
 

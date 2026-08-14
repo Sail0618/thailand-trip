@@ -167,22 +167,43 @@ function renderMarkers(list) {
   });
 }
 
+// 更新时间：相对时间 + 具体时分
+function fmtUpdated(ts) {
+  const diff = Date.now() - (ts || Date.now());
+  const mins = Math.round(diff / 60000);
+  let rel;
+  if (mins <= 1) rel = "刚刚";
+  else if (mins < 60) rel = mins + " 分钟前";
+  else rel = Math.floor(mins / 60) + " 小时前";
+  let clock = "";
+  try {
+    clock = new Date(ts).toLocaleTimeString("zh-CN", { hour: "2-digit", minute: "2-digit", hour12: false });
+  } catch (e) { /* ignore */ }
+  return clock ? rel + " · " + clock : rel;
+}
+
 function renderMemberList(list) {
-  const now = Date.now();
   const el = $("member-list");
   if (!list.length) {
-    el.innerHTML = `<p style="font-size:.8em;color:var(--text-l)">暂无共享位置的成员。让大家打开本页面并点"开始共享位置"。</p>`;
+    el.innerHTML = `<p class="loc-empty">暂无共享位置的成员。让大家打开本页面并点"开始共享位置"。</p>`;
     return;
   }
-  el.innerHTML = list.map((loc) => {
-    const mins = Math.round((now - (loc.updatedAt || now)) / 60000);
-    const timeTxt = mins <= 1 ? "刚刚" : `${mins} 分钟前`;
-    return `<div class="member-chip">
+  // 最新更新的排前面
+  const sorted = [...list].sort((a, b) => (b.updatedAt || 0) - (a.updatedAt || 0));
+  const rows = sorted.map((loc) => {
+    const me = loc.id === myId ? "（我）" : "";
+    const addrTxt = loc.address
+      ? `📍 ${escapeHtml(loc.address)}`
+      : `<span class="mc-addr-unknown">地址解析中…</span>`;
+    return `<div class="member-card">
       <span class="dot" style="background:${escapeHtml(loc.color) || "#0D7D6B"}"></span>
-      ${escapeHtml(loc.name)}${loc.id === myId ? " (我)" : ""}
-      <span class="time">${escapeHtml(timeTxt)}</span>
+      <div class="mc-main">
+        <div class="mc-name">${escapeHtml(loc.name)}${me}<span class="mc-time">${escapeHtml(fmtUpdated(loc.updatedAt))}</span></div>
+        <div class="mc-addr">${addrTxt}</div>
+      </div>
     </div>`;
-  }).join("");
+  });
+  el.innerHTML = rows.join("");
 }
 
 // ============================================================

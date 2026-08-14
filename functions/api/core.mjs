@@ -22,6 +22,8 @@ const STALE_LOCATION_MS = 10 * 60 * 1000; // 10 分钟
 const FX_API_URL = "https://open.er-api.com/v6/latest/CNY";
 const FX_LIVE_CACHE_MS = 10 * 60 * 1000; // 实时汇率缓存 10 分钟
 const JSONBIN_URL = "https://api.jsonbin.io/v3/b";
+const GEO_API = "https://api.bigdatacloud.net/data/reverse-geocode-client";
+const GEO_CACHE_TTL_MS = 30 * 60 * 1000;
 
 // ---------- 小工具 ----------
 function clone(v) {
@@ -211,6 +213,45 @@ function assertVersion(current, expected) {
 }
 
 // ---------- 实时汇率 ----------
+// 逆地理编码：BigDataCloud 免费服务，支持中文、全球覆盖；KV 缓存 30 分钟
+function buildAddress(d) {
+  const parts = [];
+  if (d && d.countryName) parts.push(d.countryName);
+  const region = d && d.principalSubdivision && d.principalSubdivision !== d.countryName ? d.principalSubdivision : "";
+  const city = d && d.city && d.city !== d.principalSubdivision ? d.city : "";
+  const loc = d && d.locality && d.locality !== city && d.locality !== d.principalSubdivision ? d.locality : "";
+  parts.push(region, city, loc);
+  return parts.filter(Boolean).join(" ");
+}
+
+async function resolveAddress(kv, env, lat, lng) {
+  const key = "geo_" + Number(lat).toFixed(4) + "_" + Number(lng).toFixed(4);
+  if (kv) {
+    try {
+      const cached = await kvGet(kv, key);
+      if (cached && Date.now() - cached.at < GEO_CACHE_TTL_MS) return cached.address;
+    } catch (e) { /* ignore */ }
+  }
+  try {
+    const url = `${GEO_API}?latitude=${encodeURIComponent(lat)}&longitude=${encodeURIComponent(lng)}&localityLanguage=zh`;
+    const res = await fetch(url, {
+      headers: { "User-Agent": "thailand-trip-shared/1.0" },
+      signal: timeoutSignal(5000)
+    });
+    if (res.ok) {
+      const d = await res.json();
+      const addr = buildAddress(d);
+      if (addr && kv) await kvPut(kv, key, { address: addr, at: Date.now() }).catch(() => {});
+      return addr;
+    }
+  } catch (e) { /* 解析失败返回空 */ }
+  return "";
+}
+
+async function withAddresses(kv, env, list) {
+  return Promise.all(list.map(async (l) => ({ ...l, address: await resolveAddress(kv, env, l.lat, l.lng) })));
+}
+
 function timeoutSignal(ms) {
   // Edge Functions 环境若支持 AbortSignal.timeout 则用之，否则用 Promise.race
   if (typeof AbortSignal !== "undefined" && typeof AbortSignal.timeout === "function") {
@@ -523,7 +564,8 @@ async function handleApi(method, pathname, query, body, kv, env) {
     const current = await load(kv, env);
     if (method === "GET") {
       const now = Date.now();
-      return json((current.locations || []).filter((l) => now - (l.updatedAt || 0) < STALE_LOCATION_MS));
+      const list = (current.locations || []).filter((l) => now - (l.updatedAt || 0) < STALE_LOCATION_MS);
+      return json(await withAddresses(kv, env, list));
     }
     if (method === "POST") {
       const name = cleanStr(body && body.name, 50);

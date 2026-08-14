@@ -46,6 +46,11 @@ describe("EdgeOne Pages Functions", () => {
           provider: "mock", rates: { THB: 5 }
         }), { status: 200, headers: { "Content-Type": "application/json" } });
       }
+      if (u.includes("bigdatacloud.net")) {
+        return new Response(JSON.stringify({
+          countryName: "泰国", principalSubdivision: "曼谷", city: "曼谷", locality: "哒叻裕区"
+        }), { status: 200, headers: { "Content-Type": "application/json" } });
+      }
       if (u.includes("api.jsonbin.io")) {
         if (opts && opts.method === "PUT") {
           jsonbinRecord = JSON.parse(String(opts.body));
@@ -162,6 +167,7 @@ describe("EdgeOne Pages Functions", () => {
     const { json: list } = await api("GET", "/api/locations");
     assert.equal(list.length, 1);
     assert.equal(list[0].name, "小明");
+    assert.equal(list[0].address, "泰国 曼谷 哒叻裕区");
     const del = await api("DELETE", `/api/locations/${post.json.id}`);
     assert.equal(del.status, 200);
     const { json: list2 } = await api("GET", "/api/locations");
