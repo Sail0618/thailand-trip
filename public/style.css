@@ -72,7 +72,7 @@ input,select{font-family:inherit}
 .section{background:var(--card);border-radius:var(--radius);box-shadow:var(--shadow);margin-bottom:18px;overflow:hidden}
 .section-header{display:flex;align-items:center;gap:10px;padding:16px 18px;font-weight:700;font-size:.98em;color:var(--text);border-bottom:1px solid var(--border);background:var(--hdr-tint,transparent)}
 /* 主标题统一元素：大圆点（颜色随组件主题色变化，形状一致） */
-.section-header::before{content:'';width:12px;height:12px;border-radius:50%;background:var(--acc,#0F766E);flex-shrink:0;box-shadow:0 2px 5px rgba(0,0,0,.12)}
+/* 圆点已按需求移除，保留底色 --hdr-tint */
 .section-header.flight{--acc:#0F766E;--hdr-tint:rgba(15,118,110,.045)}
 .section-header.location{--acc:#2563EB;--hdr-tint:rgba(37,99,235,.045)}
 .section-header.tip{--acc:#B7791F;--hdr-tint:rgba(183,121,31,.045)}
