@@ -54,7 +54,10 @@
   <div class="footer">
     <p>📋 米多多的泰国完整行程 · 8 人团 · 2026.09.24-10.04 · 在线协作共享版</p>
     <p>拖动组件标题左侧的 ⋮⋮ 调整顺序 · 祝旅途愉快！🎉</p>
-    <button class="log-entry" id="btn-log" title="查看操作变更记录" aria-label="操作日志">📋 操作日志</button>
+    <div class="footer-actions">
+      <button class="log-entry" id="btn-install" style="display:none" title="安装到桌面/主屏幕">📲 添加到桌面</button>
+      <button class="log-entry" id="btn-log" title="查看操作变更记录" aria-label="操作日志">📋 操作日志</button>
+    </div>
   </div>
 
 <!-- 操作日志：管理员密码门槛 -->
@@ -275,6 +278,23 @@
 <div class="lightbox" id="lightbox" style="display:none">
   <img id="lightbox-img" alt="小票大图">
   <button class="lightbox-close" id="lightbox-close" title="关闭">✕</button>
+</div>
+
+<!-- 添加到主屏幕引导（iOS Safari 无安装 API，只能引导） -->
+<div class="modal-overlay" id="modal-install-overlay" style="display:none">
+  <div class="modal">
+    <div class="modal-header">📲 添加到主屏幕</div>
+    <div class="modal-body install-guide">
+      <div class="ig-step"><span class="ig-num">1</span><span>在 Safari 底部点击「<b>分享</b>」按钮（方框箭头图标）</span></div>
+      <div class="ig-step"><span class="ig-num">2</span><span>向下滑动，选择「<b>添加到主屏幕</b>」</span></div>
+      <div class="ig-step"><span class="ig-num">3</span><span>点击右上角「<b>添加</b>」，主屏幕就会出现「泰国行程」图标 🎉</span></div>
+      <p class="ig-tip">安装后像 App 一样全屏打开，还支持离线查看。</p>
+    </div>
+    <div class="modal-footer">
+      <span style="flex:1"></span>
+      <button class="btn btn-primary" id="btn-install-close">知道了</button>
+    </div>
+  </div>
 </div>
 
 <!-- 通用确认弹窗 -->

@@ -25,6 +25,61 @@ if ("serviceWorker" in navigator && !EXPORT_MODE) {
   });
 }
 
+// ============================================================
+// 添加到桌面/主屏幕（等 $ 定义后再初始化，避免 TDZ）
+// ============================================================
+function setupInstallFeature() {
+// ============================================================
+// 添加到桌面/主屏幕
+// - Chrome/Android/Edge：拦截 beforeinstallprompt，一键调用系统安装
+// - iOS Safari：无安装 API，点击弹出"分享→添加到主屏幕"引导
+// - 已安装（standalone）时自动隐藏按钮
+// ============================================================
+let deferredPrompt = null;
+function isStandaloneApp() {
+  return (window.matchMedia && window.matchMedia("(display-mode: standalone)").matches) || window.navigator.standalone === true;
+}
+function showInstallBtn() {
+  const b = $("btn-install");
+  if (!b) return;
+  const isIOS = /iphone|ipad|ipod/i.test(navigator.userAgent);
+  // 已安装隐藏；仅当"可安装(Chrome/Android)"或"iOS Safari"时显示
+  const show = !isStandaloneApp() && (deferredPrompt || isIOS);
+  b.style.display = show ? "inline-block" : "none";
+}
+window.addEventListener("beforeinstallprompt", (e) => {
+  e.preventDefault();
+  deferredPrompt = e;
+  showInstallBtn();
+});
+window.addEventListener("appinstalled", () => {
+  deferredPrompt = null;
+  const b = $("btn-install");
+  if (b) b.style.display = "none";
+  toast("✅ 已安装到桌面");
+});
+$("btn-install").addEventListener("click", async () => {
+  if (deferredPrompt) {
+    // 一键调用系统安装（Chrome/Android/Edge）
+    try {
+      deferredPrompt.prompt();
+      const choice = await deferredPrompt.userChoice.catch(() => ({}));
+      deferredPrompt = null;
+      if (choice && choice.outcome === "accepted") {
+        const b = $("btn-install");
+        if (b) b.style.display = "none";
+        toast("✅ 已安装到桌面");
+      }
+    } catch (e) { /* 用户取消或浏览器不支持 */ }
+  } else {
+    // iOS Safari：展示引导
+    $("modal-install-overlay").style.display = "flex";
+  }
+});
+$("btn-install-close").addEventListener("click", () => { $("modal-install-overlay").style.display = "none"; });
+$("modal-install-overlay").addEventListener("click", (e) => { if (e.target === e.currentTarget) $("modal-install-overlay").style.display = "none"; });
+}
+
 // 服务器数据是否应覆盖本地缓存
 // 判定"被回滚"：①服务器 version 低于缓存 ②缓存有退税小票/勾选待办但服务器没有（防旧快照覆盖）
 function freshShouldWin(cached, fresh) {
@@ -344,6 +399,7 @@ let editingFlightId = null;    // 正在编辑的航班 id
 let editingBudgetId = null;    // 正在编辑的预算 id
 
 const $ = (id) => document.getElementById(id);
+setupInstallFeature(); // 初始化"添加到桌面"按钮（元素为静态 HTML，此时已可用）
 
 // HTML 转义：所有用户可写字段插入 innerHTML 前必须经过此函数
 function escapeHtml(v) {

@@ -461,6 +461,15 @@ body.modal-open{overflow:hidden}
 .app-toast.show{opacity:1;transform:translateX(-50%) translateY(0)}
 .app-toast.err{background:rgba(198,40,40,.92)}
 
+/* ============ 添加到主屏幕 ============ */
+.footer-actions{display:flex;justify-content:center;gap:10px;margin-top:12px;flex-wrap:wrap}
+.footer-actions .log-entry{margin-top:0}
+.install-guide{display:flex;flex-direction:column;gap:14px;padding:8px 4px}
+.ig-step{display:flex;align-items:flex-start;gap:12px;font-size:.92em;line-height:1.6;color:var(--text)}
+.ig-step b{color:var(--primary,#0F766E)}
+.ig-num{flex-shrink:0;width:24px;height:24px;border-radius:50%;background:var(--primary,#0F766E);color:#fff;font-size:.8em;font-weight:700;display:flex;align-items:center;justify-content:center;margin-top:1px}
+.ig-tip{font-size:.8em;color:var(--text-3);line-height:1.6;margin:4px 0 0;text-align:center}
+
 /* ============ 首次进入用户名门槛 ============ */
 .name-gate{position:fixed;inset:0;z-index:10000;background:linear-gradient(135deg,#0B6E99,#0D7D6B);display:flex;align-items:center;justify-content:center;padding:24px}
 .name-gate-card{background:#fff;border-radius:20px;padding:28px 22px;width:100%;max-width:360px;box-shadow:0 12px 40px rgba(0,0,0,.2);text-align:center}
