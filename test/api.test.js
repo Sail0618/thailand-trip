@@ -194,4 +194,44 @@ describe("泰国行程 API", () => {
     const after = await api("GET", "/api/budget/thb");
     assert.ok(!after.json.some((b) => b.id === add.json.id));
   });
+
+  it("每日行程：更新 / 新增 / 删除", async () => {
+    const before = await api("GET", "/api/data");
+    const d1 = before.json.days[0];
+
+    // 更新某天
+    const upd = await api("POST", `/api/days/${d1.id}`, {
+      version: before.json.version,
+      title: "更新后的标题",
+      sub: "新副标题",
+      date: d1.date, month: d1.month, weekday: d1.weekday, color: d1.color, tag: d1.tag,
+      items: [{ dot: "✈", time: "10:00", title: "新行程项", desc: ["第一行", "第二行"] }]
+    });
+    assert.equal(upd.status, 200);
+    const afterUpd = await api("GET", "/api/data");
+    const day = afterUpd.json.days.find((x) => x.id === d1.id);
+    assert.equal(day.title, "更新后的标题");
+    assert.equal(day.items.length, 1);
+    assert.equal(day.items[0].desc.length, 2);
+
+    // 新增一天
+    const add = await api("POST", "/api/days", {
+      version: afterUpd.json.version,
+      date: "10/5", month: "10月", weekday: "周一",
+      title: "返程日", sub: "", color: "#0F766E", tag: "✈️"
+    });
+    assert.equal(add.status, 200);
+    assert.ok(add.json.id);
+    const afterAdd = await api("GET", "/api/data");
+    const added = afterAdd.json.days.find((x) => x.id === add.json.id);
+    assert.ok(added);
+    assert.equal(added.title, "返程日");
+
+    // 删除新加的这一天
+    const del = await api("DELETE", `/api/days/${add.json.id}`);
+    assert.equal(del.status, 200);
+    const afterDel = await api("GET", "/api/data");
+    assert.ok(!afterDel.json.days.some((x) => x.id === add.json.id));
+  });
+
 });

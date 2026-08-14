@@ -416,6 +416,62 @@ async function handleApi(method, pathname, query, body, kv, env) {
     return json({ error: "不支持的方法" }, 405);
   }
 
+  // /api/days/:id（更新某一天）
+  if (seg[1] === "days" && seg.length === 3 && method === "POST") {
+    const id = seg[2];
+    const current = await load(kv, env);
+    const idx = current.days.findIndex((d) => d.id === id);
+    if (idx === -1) return json({ error: "行程不存在" }, 404);
+    assertVersion(current, expectedVersion(query, body));
+    const patch = pickPatch(body, ["date", "month", "weekday", "title", "sub", "color", "tag", "items"]);
+    for (const k of ["date", "month", "weekday", "title", "sub", "color", "tag"]) {
+      if (k in patch) patch[k] = cleanStr(patch[k], 200);
+    }
+    if ("items" in patch) {
+      patch.items = Array.isArray(patch.items)
+        ? patch.items.slice(0, 50).map((it) => ({
+            dot: cleanStr(it && it.dot, 20),
+            time: cleanStr(it && it.time, 100),
+            title: cleanStr(it && it.title, 300) || "行程项",
+            desc: Array.isArray(it && it.desc) ? it.desc.slice(0, 20).map((x) => cleanStr(x, 500)) : []
+          }))
+        : [];
+    }
+    current.days[idx] = { ...current.days[idx], ...patch };
+    const saved = await commit(kv, env, current);
+    return json({ ok: true, version: saved.version });
+  }
+
+  // /api/days/:id（删除一天）
+  if (seg[1] === "days" && seg.length === 3 && method === "DELETE") {
+    const id = seg[2];
+    const current = await load(kv, env);
+    current.days = current.days.filter((d) => d.id !== id);
+    const saved = await commit(kv, env, current);
+    return json({ ok: true, version: saved.version });
+  }
+
+  // /api/days（新增一天）
+  if (seg[1] === "days" && seg.length === 2 && method === "POST") {
+    const current = await load(kv, env);
+    assertVersion(current, expectedVersion(query, body));
+    const b = body || {};
+    const day = {
+      id: genId("d"),
+      date: cleanStr(b.date, 20) || "?",
+      month: cleanStr(b.month, 20) || "",
+      weekday: cleanStr(b.weekday, 20) || "",
+      title: cleanStr(b.title, 200) || "新的一天",
+      sub: cleanStr(b.sub, 200),
+      color: cleanStr(b.color, 20) || "#0F766E",
+      tag: cleanStr(b.tag, 50),
+      items: []
+    };
+    current.days.push(day);
+    const saved = await commit(kv, env, current);
+    return json({ ok: true, id: day.id, version: saved.version });
+  }
+
   // /api/budget/:type
   if (seg[1] === "budget" && seg.length === 3) {
     const type = seg[2] === "thb" ? "thb" : "cny";

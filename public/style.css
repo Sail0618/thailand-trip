@@ -249,6 +249,31 @@ input,select{font-family:inherit}
 .bill-total.balance.surplus b{color:var(--ok)}
 .bill-total.balance.deficit b{color:var(--danger)}
 
+/* ============ 每日行程编辑 ============ */
+.day-edit{opacity:.55;flex-shrink:0;transition:opacity .15s,transform .1s;background:transparent;border:none;font-size:1em;padding:4px;border-radius:8px;line-height:1}
+.day-edit:hover{opacity:1;background:var(--bg)}
+.day-edit:active{transform:scale(.92)}
+.day-add-row{
+  display:flex;align-items:center;justify-content:center;gap:6px;width:100%;
+  border:1.5px dashed var(--border-2);border-radius:13px;padding:12px;
+  color:var(--text-2);font-size:.84em;cursor:pointer;background:var(--bg);
+  transition:color .15s,border-color .15s,background .15s;font-family:inherit;font-weight:600;
+}
+.day-add-row:hover{border-color:var(--primary);color:var(--primary);background:var(--primary-l)}
+/* 主题色选择器 */
+.day-colors{display:flex;flex-wrap:wrap;gap:9px}
+.dc-swatch{width:32px;height:32px;border-radius:50%;background:var(--sw);border:2.5px solid transparent;cursor:pointer;transition:transform .12s,border-color .12s;flex-shrink:0;padding:0}
+.dc-swatch:active{transform:scale(.9)}
+.dc-swatch.sel{border-color:var(--text);box-shadow:0 0 0 3px rgba(20,30,25,.08)}
+/* 行程项编辑行 */
+.di-item{position:relative;border:1px solid var(--border-2);border-radius:12px;padding:12px 34px 12px 12px;margin-bottom:10px;background:var(--card);display:flex;flex-direction:column;gap:8px}
+.di-grid{display:grid;grid-template-columns:64px 1fr;gap:8px}
+.di-item input,.di-item textarea{width:100%;padding:9px 11px;border:1.5px solid var(--border-2);border-radius:9px;font-size:14px;background:var(--card);color:var(--text);transition:border-color .15s}
+.di-item input:focus,.di-item textarea:focus{outline:none;border-color:var(--primary);box-shadow:0 0 0 3px rgba(15,118,110,.1)}
+.di-item textarea{resize:vertical;min-height:44px;line-height:1.5}
+.di-del{position:absolute;top:10px;right:8px;padding:6px!important;font-size:.95em!important;opacity:.55}
+.di-del:hover{opacity:1}
+
 /* ============ 汇率换算 ============ */
 .fx-rate-row{display:flex;align-items:center;gap:6px;padding:11px 12px;background:var(--bg);border:1px solid var(--border);border-radius:12px;font-size:.85em;flex-wrap:nowrap}
 .fx-rate-label{font-size:.76em;color:var(--text-2);font-weight:600;flex-shrink:0;white-space:nowrap}

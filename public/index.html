@@ -134,6 +134,46 @@
   </div>
 </div>
 
+<!-- 编辑浮层：每日行程 -->
+<div class="modal-overlay" id="modal-day-overlay" style="display:none">
+  <div class="modal">
+    <div class="modal-header" id="day-modal-title">编辑行程</div>
+    <div class="modal-body">
+      <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:8px">
+        <div>
+          <label>日期</label>
+          <input type="text" id="d-date" placeholder="9/24">
+        </div>
+        <div>
+          <label>月份</label>
+          <input type="text" id="d-month" placeholder="9月">
+        </div>
+        <div>
+          <label>星期</label>
+          <input type="text" id="d-weekday" placeholder="周四">
+        </div>
+      </div>
+      <label>标题</label>
+      <input type="text" id="d-title" placeholder="出发日 · 杭州 → 香港">
+      <label>副标题</label>
+      <input type="text" id="d-sub" placeholder="周四 · 国际段第一程">
+      <label>标签</label>
+      <input type="text" id="d-tag" placeholder="✈️ 转机">
+      <label>主题色</label>
+      <div class="day-colors" id="d-colors"></div>
+      <label>行程安排</label>
+      <div id="d-items"></div>
+      <button type="button" class="add-btn" id="d-add-item" style="margin-top:10px;width:100%;justify-content:center">＋ 添加行程项</button>
+    </div>
+    <div class="modal-footer">
+      <button class="btn btn-danger" id="btn-del-day" style="display:none">删除这天</button>
+      <span style="flex:1"></span>
+      <button class="btn btn-outline" id="btn-cancel-day">取消</button>
+      <button class="btn btn-primary" id="btn-save-day">保存</button>
+    </div>
+  </div>
+</div>
+
 <!-- 编辑浮层：汇率换算 -->
 <div class="modal-overlay" id="modal-fx-overlay" style="display:none">
   <div class="modal">

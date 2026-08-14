@@ -389,17 +389,18 @@ function renderFlights() {
 function renderDays() {
   const container = $("days-container");
   if (!container) return;
-  container.innerHTML = (data.days || []).map((d) => `
+  const cards = (data.days || []).map((d) => `
     <div class="day-card" style="--dayc:${escapeHtml(d.color)};--dayl:${escapeHtml(d.color)}1A">
       <div class="day-header" data-day="${escapeHtml(d.id)}" role="button" tabindex="0" aria-expanded="false">
         <div class="left">
           <div class="day-badge" title="${escapeHtml(d.date)} ${escapeHtml(d.month)}">${escapeHtml(d.date)}</div>
           <div>
             <div class="day-title">${escapeHtml(d.title)}</div>
-            <div class="day-sub">${escapeHtml(d.sub)} · ${escapeHtml(d.weekday)}</div>
+            <div class="day-sub">${d.sub ? escapeHtml(d.sub) + " · " : ""}${escapeHtml(d.weekday)}</div>
           </div>
         </div>
         <span class="day-tag">${escapeHtml(d.tag)}</span>
+        <button class="btn-icon day-edit" data-edit-day="${escapeHtml(d.id)}" title="编辑这天" aria-label="编辑这天">✏️</button>
         <span class="day-chevron" aria-hidden="true">▾</span>
       </div>
       <div class="day-body" id="day-body-${escapeHtml(d.id)}">
@@ -415,6 +416,9 @@ function renderDays() {
       </div>
     </div>`).join("");
 
+  container.innerHTML = cards + `
+    <button class="day-add-row" id="day-add-row" title="新增一天">＋ 新增一天</button>`;
+
   document.querySelectorAll(".day-header").forEach((h) => {
     const toggle = () => {
       const body = document.getElementById("day-body-" + h.dataset.day);
@@ -422,11 +426,124 @@ function renderDays() {
       const open = body.classList.toggle("open");
       h.setAttribute("aria-expanded", open ? "true" : "false");
     };
-    h.addEventListener("click", toggle);
+    h.addEventListener("click", (e) => {
+      // 点击编辑按钮不触发展开/收起
+      if (e.target.closest("[data-edit-day]")) return;
+      toggle();
+    });
     h.addEventListener("keydown", (e) => {
       if (e.key === "Enter" || e.key === " ") { e.preventDefault(); toggle(); }
     });
   });
+}
+
+// ============================================================
+// 每日行程编辑（弹窗）
+// ============================================================
+let editingDayId = null;
+let dayColor = "#0F766E";
+const DAY_COLORS = ["#0F766E", "#2563EB", "#B7791F", "#D64545", "#7C3AED", "#E91E63", "#3F51B5", "#607D8B"];
+
+function openDayEditModal(id) {
+  editingDayId = id;
+  const day = id ? (data.days || []).find((d) => d.id === id) : null;
+  $("day-modal-title").textContent = day ? "编辑行程" : "新增一天";
+  $("d-date").value = day ? (day.date || "") : "";
+  $("d-month").value = day ? (day.month || "") : "";
+  $("d-weekday").value = day ? (day.weekday || "") : "";
+  $("d-title").value = day ? (day.title || "") : "";
+  $("d-sub").value = day ? (day.sub || "") : "";
+  $("d-tag").value = day ? (day.tag || "") : "";
+  dayColor = day && day.color ? day.color : DAY_COLORS[0];
+  renderDayColors();
+  renderDayItems(day ? (day.items || []) : []);
+  $("btn-del-day").style.display = day ? "" : "none";
+  $("modal-day-overlay").style.display = "flex";
+}
+
+function closeDayModal() {
+  $("modal-day-overlay").style.display = "none";
+  editingDayId = null;
+}
+
+function renderDayColors() {
+  $("d-colors").innerHTML = DAY_COLORS.map((c) =>
+    `<button type="button" class="dc-swatch ${c === dayColor ? "sel" : ""}" data-color="${c}" style="--sw:${c}" aria-label="颜色 ${c}"></button>`
+  ).join("");
+  document.querySelectorAll("#d-colors .dc-swatch").forEach((b) => {
+    b.addEventListener("click", () => { dayColor = b.dataset.color; renderDayColors(); });
+  });
+}
+
+function addDayItemRow(item) {
+  const wrap = $("d-items");
+  const row = document.createElement("div");
+  row.className = "di-item";
+  row.innerHTML = `
+    <div class="di-grid">
+      <input class="di-dot" value="${escapeHtml((item && item.dot) || "")}" placeholder="图标" maxlength="4">
+      <input class="di-time" value="${escapeHtml((item && item.time) || "")}" placeholder="时间，如 08:00 → 10:00">
+    </div>
+    <input class="di-title" value="${escapeHtml((item && item.title) || "")}" placeholder="事项标题">
+    <textarea class="di-desc" rows="2" placeholder="描述，每行一条">${escapeHtml((item && item.desc || []).join("\n"))}</textarea>
+    <button type="button" class="btn-icon di-del" title="删除该项">🗑️</button>`;
+  row.querySelector(".di-del").addEventListener("click", () => row.remove());
+  wrap.appendChild(row);
+}
+
+function renderDayItems(items) {
+  const wrap = $("d-items");
+  wrap.innerHTML = "";
+  (items || []).forEach((it) => addDayItemRow(it));
+}
+
+function collectDayForm() {
+  const items = [];
+  document.querySelectorAll("#d-items .di-item").forEach((row) => {
+    const title = row.querySelector(".di-title").value.trim();
+    if (!title) return;
+    items.push({
+      dot: row.querySelector(".di-dot").value.trim(),
+      time: row.querySelector(".di-time").value.trim(),
+      title,
+      desc: row.querySelector(".di-desc").value.split("\n").map((x) => x.trim()).filter(Boolean)
+    });
+  });
+  return {
+    date: $("d-date").value.trim(),
+    month: $("d-month").value.trim(),
+    weekday: $("d-weekday").value.trim(),
+    title: $("d-title").value.trim() || "新的一天",
+    sub: $("d-sub").value.trim(),
+    color: dayColor,
+    tag: $("d-tag").value.trim(),
+    items
+  };
+}
+
+function saveDay() {
+  const form = collectDayForm();
+  const body = { ...form, version: data ? data.version : undefined };
+  if (editingDayId) {
+    const d = (data.days || []).find((x) => x.id === editingDayId);
+    if (d) Object.assign(d, form);
+    renderDays();
+    apiPost(`/api/days/${editingDayId}`, body);
+  } else {
+    (data.days || (data.days = [])).push({ id: genId("d"), ...form });
+    renderDays();
+    apiPost("/api/days", body);
+  }
+  closeDayModal();
+}
+
+function delDay() {
+  if (!editingDayId) return;
+  if (!confirm("删除这一天？此操作不可恢复。")) return;
+  data.days = (data.days || []).filter((d) => d.id !== editingDayId);
+  renderDays();
+  apiDelete(`/api/days/${editingDayId}`);
+  closeDayModal();
 }
 
 // ============================================================
@@ -918,6 +1035,19 @@ document.addEventListener("DOMContentLoaded", () => {
       }
     }
   });
+
+  // 每日行程：编辑某天 / 新增一天（委托）
+  document.addEventListener("click", (e) => {
+    const editBtn = e.target.closest("[data-edit-day]");
+    if (editBtn) { openDayEditModal(editBtn.dataset.editDay); return; }
+    if (e.target.closest("#day-add-row")) { openDayEditModal(null); return; }
+  });
+
+  $("btn-cancel-day").addEventListener("click", closeDayModal);
+  $("btn-save-day").addEventListener("click", saveDay);
+  $("btn-del-day").addEventListener("click", delDay);
+  $("d-add-item").addEventListener("click", () => addDayItemRow(null));
+  $("modal-day-overlay").addEventListener("click", (e) => { if (e.target === e.currentTarget) closeDayModal(); });
 
   // 新增按钮（动态渲染进组件头部）→ 用事件委托，不依赖渲染时机
   document.addEventListener("click", (e) => {

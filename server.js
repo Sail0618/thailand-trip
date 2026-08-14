@@ -455,6 +455,63 @@ app.delete("/api/todos/:id", route(async (req, res) => {
 }));
 
 // ------------------------------------------------------------
+// 路由：每日行程
+// ------------------------------------------------------------
+// 更新某一天的行程（白名单字段 + items 清洗）
+app.post("/api/days/:id", route(async (req, res) => {
+  const current = await getStore();
+  assertVersion(current, expectedVersion(req));
+  const idx = current.days.findIndex((d) => d.id === req.params.id);
+  if (idx === -1) return res.status(404).json({ error: "行程不存在" });
+  const patch = pickPatch(req.body, ["date", "month", "weekday", "title", "sub", "color", "tag", "items"]);
+  for (const k of ["date", "month", "weekday", "title", "sub", "color", "tag"]) {
+    if (k in patch) patch[k] = cleanStr(patch[k], 200);
+  }
+  if ("items" in patch) {
+    patch.items = Array.isArray(patch.items)
+      ? patch.items.slice(0, 50).map((it) => ({
+          dot: cleanStr(it && it.dot, 20),
+          time: cleanStr(it && it.time, 100),
+          title: cleanStr(it && it.title, 300) || "行程项",
+          desc: Array.isArray(it && it.desc) ? it.desc.slice(0, 20).map((x) => cleanStr(x, 500)) : []
+        }))
+      : [];
+  }
+  current.days[idx] = { ...current.days[idx], ...patch };
+  const saved = await commit(current);
+  res.json({ ok: true, version: saved.version });
+}));
+
+// 新增一天
+app.post("/api/days", route(async (req, res) => {
+  const current = await getStore();
+  assertVersion(current, expectedVersion(req));
+  const body = req.body || {};
+  const day = {
+    id: "d" + Date.now().toString(36) + Math.random().toString(36).slice(2, 6),
+    date: cleanStr(body.date, 20) || "?",
+    month: cleanStr(body.month, 20) || "",
+    weekday: cleanStr(body.weekday, 20) || "",
+    title: cleanStr(body.title, 200) || "新的一天",
+    sub: cleanStr(body.sub, 200),
+    color: cleanStr(body.color, 20) || "#0F766E",
+    tag: cleanStr(body.tag, 50),
+    items: []
+  };
+  current.days.push(day);
+  const saved = await commit(current);
+  res.json({ ok: true, id: day.id, version: saved.version });
+}));
+
+// 删除一天
+app.delete("/api/days/:id", route(async (req, res) => {
+  const current = await getStore();
+  current.days = current.days.filter((d) => d.id !== req.params.id);
+  const saved = await commit(current);
+  res.json({ ok: true, version: saved.version });
+}));
+
+// ------------------------------------------------------------
 // 路由：预算（¥ 人民币 / ฿ 泰铢 两套独立，互不影响）
 // ------------------------------------------------------------
 function budgetList(current, type) {
