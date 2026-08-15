@@ -475,6 +475,11 @@ body.modal-open{overflow:hidden}
 .ig-num{flex-shrink:0;width:24px;height:24px;border-radius:50%;background:var(--primary,#0F766E);color:#fff;font-size:.8em;font-weight:700;display:flex;align-items:center;justify-content:center;margin-top:1px}
 .ig-tip{font-size:.8em;color:var(--text-3);line-height:1.6;margin:4px 0 0;text-align:center}
 
+/* ============ 粘贴自动生成行程项 ============ */
+#d-paste{width:100%;box-sizing:border-box;padding:10px 12px;border:1.5px solid var(--border-2);border-radius:10px;font-size:14px;line-height:1.6;background:var(--bg,#F6F5F2);color:var(--text);resize:vertical;min-height:88px;font-family:inherit}
+#d-paste:focus{outline:none;border-color:var(--primary);background:var(--card);box-shadow:0 0 0 3px rgba(15,118,110,.1)}
+.paste-hint{margin:6px 0 0;font-size:.76em;color:var(--text-3)}
+
 /* ============ 首次进入用户名门槛 ============ */
 .name-gate{position:fixed;inset:0;z-index:10000;background:linear-gradient(135deg,#0B6E99,#0D7D6B);display:flex;align-items:center;justify-content:center;padding:24px}
 .name-gate-card{background:#fff;border-radius:20px;padding:28px 22px;width:100%;max-width:360px;box-shadow:0 12px 40px rgba(0,0,0,.2);text-align:center}

@@ -1004,6 +1004,42 @@ function renderDayColors() {
   });
 }
 
+// 解析粘贴文本 → 行程项数组（每行一个；识别时间/时间区间/前导图标）
+function parseItineraryText(text) {
+  return String(text || "")
+    .split(/\r?\n/)
+    .map((line) => line.trim())
+    .filter(Boolean)
+    .map((line) => {
+      let dot = "";
+      // 前导图标（emoji/符号）
+      const emoji = line.match(/^([\u{1F000}-\u{1FAFF}\u2600-\u27BF\u2B00-\u2BFF\uFE0F]{1,3})/u);
+      if (emoji) { dot = emoji[1]; line = line.slice(emoji[1].length).trim(); }
+      // 时间区间：09:00 - 11:00 / 09:00-11:00
+      let time = "";
+      const range = line.match(/^(\d{1,2}[:：]\d{2})\s*[-—~～]\s*(\d{1,2}[:：]\d{2})/);
+      if (range) { time = range[1] + " → " + range[2]; line = line.slice(range[0].length).trim(); }
+      else {
+        const single = line.match(/^(\d{1,2}[:：]\d{2})/);
+        if (single) { time = single[1]; line = line.slice(single[0].length).trim(); }
+      }
+      // 去掉残留分隔符
+      line = line.replace(/^[\s:：\-—|]+/, "").trim();
+      return { dot, time, title: line || "行程项", desc: [] };
+    });
+}
+
+// 从粘贴框生成行程项并追加
+function generateDayItemsFromPaste() {
+  const ta = $("d-paste");
+  if (!ta) return;
+  const items = parseItineraryText(ta.value);
+  if (!items.length) { toast("请先粘贴文字内容", "err"); return; }
+  items.forEach((it) => addDayItemRow(it));
+  ta.value = "";
+  toast(`✅ 已生成 ${items.length} 个行程项`);
+}
+
 function addDayItemRow(item) {
   const wrap = $("d-items");
   const row = document.createElement("div");
@@ -1909,6 +1945,17 @@ function bootApp() {
   });
   $("btn-log-close").addEventListener("click", () => { $("modal-log-overlay").style.display = "none"; });
   $("modal-log-overlay").addEventListener("click", (e) => { if (e.target === e.currentTarget) $("modal-log-overlay").style.display = "none"; });
+
+  // 每日行程：粘贴自动生成行程项
+  const dPaste = $("d-paste");
+  if (dPaste) {
+    dPaste.addEventListener("paste", (e) => {
+      // 等粘贴完成后取值生成
+      setTimeout(() => {
+        if (dPaste.value.trim()) generateDayItemsFromPaste();
+      }, 30);
+    });
+  }
 
   // 航班行操作（委托）：点击任意单元格打开编辑弹窗
   document.addEventListener("click", (e) => {

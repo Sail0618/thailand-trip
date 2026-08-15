@@ -216,6 +216,9 @@
       <label>行程安排</label>
       <div id="d-items"></div>
       <button type="button" class="add-btn" id="d-add-item" style="margin-top:10px;width:100%;justify-content:center">＋ 添加行程项</button>
+      <label style="margin-top:14px">📋 粘贴自动生成</label>
+      <textarea id="d-paste" rows="4" placeholder="粘贴多行文字，自动生成行程项&#10;每行一个，可识别时间与图标：&#10;08:00 起床洗漱&#10;09:00 - 11:00 大皇宫参观&#10;🍜 午餐 泰式炒粉"></textarea>
+      <p class="paste-hint">粘贴文字后自动生成，识别「时间 / 时间-时间 / 前导图标」</p>
     </div>
     <div class="modal-footer">
       <button class="btn btn-danger" id="btn-del-day" style="display:none">删除这天</button>
