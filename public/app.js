@@ -1102,10 +1102,8 @@ function openPlaceSheet(name) {
   $("place-name").textContent = name;
   const q = encodeURIComponent(name);
   const apps = [
-    { app: "高德地图", logo: "/img/maps/gaode.jpg", url: `https://uri.amap.com/search?keyword=${q}` },
-    { app: "苹果地图", logo: "/img/maps/apple.jpg", url: `http://maps.apple.com/?q=${q}` },
-    { app: "百度地图", logo: "/img/maps/baidu.jpg", url: `https://api.map.baidu.com/geocoder?address=${q}&output=html` },
-    { app: "Google 地图", logo: "/img/maps/google.png", url: `https://www.google.com/maps/search/?api=1&query=${q}` }
+    { app: "Google 地图", logo: "/img/maps/google.png", url: `https://www.google.com/maps/search/?api=1&query=${q}` },
+    { app: "苹果地图", logo: "/img/maps/apple.jpg", url: `http://maps.apple.com/?q=${q}` }
   ];
   $("place-map-list").innerHTML = apps.map((a) =>
     `<a class="place-map-item" href="${escapeHtml(a.url)}" target="_blank" rel="noopener">` +
