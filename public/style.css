@@ -481,8 +481,10 @@ body.modal-open{overflow:hidden}
 .paste-hint{margin:6px 0 0;font-size:.76em;color:var(--text-3)}
 
 /* ============ 行程位置 ============ */
-.tl-loc{display:inline-flex;align-items:center;gap:4px;margin-top:6px;font-size:.8em;color:var(--primary,#0F766E);background:var(--primary-l);border:1px solid rgba(15,118,110,.15);padding:4px 11px;border-radius:999px;cursor:pointer;font-weight:600;max-width:100%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.tl-locs{margin-top:6px;display:flex;align-items:center;flex-wrap:wrap;gap:6px}
+.tl-loc{display:inline-flex;align-items:center;gap:4px;font-size:.8em;color:var(--primary,#0F766E);background:var(--primary-l);border:1px solid rgba(15,118,110,.15);padding:4px 11px;border-radius:999px;cursor:pointer;font-weight:600}
 .tl-loc:active{background:#D8EFEA}
+.tl-loc-arrow{color:var(--text-3,#A6ABA8);font-size:.85em;font-weight:700;flex-shrink:0}
 .di-loc{width:100%;box-sizing:border-box;padding:9px 11px;border:1.5px solid var(--border-2);border-radius:9px;font-size:14px;background:var(--card);color:var(--text)}
 .di-loc:focus{outline:none;border-color:var(--primary);box-shadow:0 0 0 3px rgba(15,118,110,.1)}
 /* 位置导航弹窗 2x2 */

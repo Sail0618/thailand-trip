@@ -910,13 +910,15 @@ function renderFlights() {
 // ============================================================
 // 每日行程渲染
 // ============================================================
-// 渲染行程项位置：单个或多个地址，每个都可点击导航
+// 渲染行程项位置：绿色胶囊样式，多地址用箭头隔开，每个独立可点击导航
 function renderLocs(loc) {
   if (!loc) return "";
-  const arr = Array.isArray(loc) ? loc : [loc];
-  return arr.filter(Boolean).map((l) =>
-    `<span class="tl-loc" data-loc="${escapeHtml(l)}" role="button" title="点击用地图导航">📍 ${escapeHtml(l)}</span>`
-  ).join(" ");
+  const arr = (Array.isArray(loc) ? loc : [loc]).filter(Boolean);
+  if (!arr.length) return "";
+  const pills = arr.map((l, i) =>
+    `<span class="tl-loc" data-loc="${escapeHtml(l)}" role="button" title="点击用地图导航">${i === 0 ? "📍 " : ""}${escapeHtml(l)}</span>`
+  );
+  return `<div class="tl-locs">${pills.join('<span class="tl-loc-arrow">→</span>')}</div>`;
 }
 
 function renderDays() {
