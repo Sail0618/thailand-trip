@@ -446,6 +446,7 @@ const COMPONENTS = [
 
 // 排序存储 key 加版本号：让新的默认顺序对已有用户生效（旧的自定义排序作废一次）
 const ORDER_KEY = "trip_comp_order_v2";
+const OPEN_KEY = "trip_open_comps_v1"; // 组件展开状态记忆
 
 // 读取排序（优先本地存储，否则默认）
 function getOrder() {
@@ -706,6 +707,7 @@ function setupComponentToggle(container) {
       const open = force !== undefined ? force : !body.classList.contains("open");
       body.classList.toggle("open", open);
       h.setAttribute("aria-expanded", open ? "true" : "false");
+      saveOpenComps();
       // 位置共享组件：展开时才加载 iframe（避免进入页面即请求定位）
       if (open) {
         const card = h.closest(".component-card");
@@ -724,6 +726,30 @@ function setupComponentToggle(container) {
         toggle();
       }
     });
+  });
+  restoreOpenComps(container);
+}
+
+// 保存/恢复组件展开状态（刷新后保持）
+function saveOpenComps() {
+  try {
+    const openIds = Array.from(document.querySelectorAll(".comp-body.open"))
+      .map((b) => b.id.replace("comp-body-", ""));
+    localStorage.setItem(OPEN_KEY, JSON.stringify(openIds));
+  } catch (e) { /* ignore */ }
+}
+function restoreOpenComps(container) {
+  let saved = [];
+  try { saved = JSON.parse(localStorage.getItem(OPEN_KEY) || "[]"); } catch (e) { /* ignore */ }
+  saved.forEach((id) => {
+    const body = document.getElementById("comp-body-" + id);
+    if (!body || body.classList.contains("open")) return;
+    const h = body.closest(".component-card") ? body.closest(".component-card").querySelector(".comp-header") : null;
+    body.classList.add("open");
+    if (h) h.setAttribute("aria-expanded", "true");
+    // 位置共享组件恢复展开时加载 iframe
+    const iframe = body.querySelector("iframe[data-src]");
+    if (iframe && !iframe.src) iframe.src = iframe.dataset.src;
   });
 }
 
@@ -1828,9 +1854,11 @@ async function apiPost(url, body) {
     if (!res.ok) { setSync("offline", "保存失败，请重试"); return false; }
     const json = await res.json().catch(() => ({}));
     if (data && typeof json.version === "number") data.version = json.version;
+    toast("✅ 已保存");
     return true;
   } catch (e) {
     setSync("offline", "保存失败，请重试");
+    toast("保存失败，请重试", "err");
     return false;
   }
 }
@@ -1849,9 +1877,11 @@ async function apiDelete(url) {
     if (!res.ok) { setSync("offline", "删除失败，请重试"); return false; }
     const json = await res.json().catch(() => ({}));
     if (data && typeof json.version === "number") data.version = json.version;
+    toast("✅ 已删除");
     return true;
   } catch (e) {
     setSync("offline", "删除失败");
+    toast("删除失败", "err");
     return false;
   }
 }
@@ -1980,6 +2010,14 @@ function bootApp() {
   });
   $("btn-log-close").addEventListener("click", () => { $("modal-log-overlay").style.display = "none"; });
   $("modal-log-overlay").addEventListener("click", (e) => { if (e.target === e.currentTarget) $("modal-log-overlay").style.display = "none"; });
+
+  // 返回顶部
+  const btnTop = $("btn-top");
+  if (btnTop) {
+    const onScroll = () => { btnTop.style.display = window.scrollY > 600 ? "flex" : "none"; };
+    window.addEventListener("scroll", onScroll, { passive: true });
+    btnTop.addEventListener("click", () => window.scrollTo({ top: 0, behavior: "smooth" }));
+  }
 
   // 行程位置：点击拉起三方地图导航
   document.addEventListener("click", (e) => {
