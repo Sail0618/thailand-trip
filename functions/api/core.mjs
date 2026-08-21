@@ -414,7 +414,8 @@ async function blobCacheRead() {
   try {
     const store = await getBlobStore();
     if (!store) return null;
-    const raw = await store.get(DATA_CACHE_KEY, { type: "text" });
+    // 强一致读取：保存后立即回显，避免最终一致延迟
+    const raw = await store.get(DATA_CACHE_KEY, { type: "text", consistency: "strong" });
     if (!raw) return null;
     const obj = JSON.parse(raw);
     const data = obj && obj.data ? obj.data : null;
