@@ -910,6 +910,15 @@ function renderFlights() {
 // ============================================================
 // 每日行程渲染
 // ============================================================
+// 渲染行程项位置：单个或多个地址，每个都可点击导航
+function renderLocs(loc) {
+  if (!loc) return "";
+  const arr = Array.isArray(loc) ? loc : [loc];
+  return arr.filter(Boolean).map((l) =>
+    `<span class="tl-loc" data-loc="${escapeHtml(l)}" role="button" title="点击用地图导航">📍 ${escapeHtml(l)}</span>`
+  ).join(" ");
+}
+
 function renderDays() {
   const container = $("days-container");
   if (!container) return;
@@ -934,7 +943,7 @@ function renderDays() {
               <div class="tl-dot">${escapeHtml(it.dot)}</div>
               <div class="tl-time">${escapeHtml(it.time)}</div>
               <div class="tl-title">${escapeHtml(it.title)}</div>
-              ${it.loc ? `<div class="tl-loc" data-loc="${escapeHtml(it.loc)}" role="button" title="点击用地图导航">📍 ${escapeHtml(it.loc)}</div>` : ""}
+              ${renderLocs(it.loc)}
               <div class="tl-desc"><ul>${(it.desc || []).map((x) => `<li>${escapeHtml(x)}</li>`).join("")}</ul></div>
             </div>`).join("")}
         </div>
@@ -1057,7 +1066,7 @@ function addDayItemRow(item) {
         <input class="di-time" value="${escapeHtml((item && item.time) || "")}" placeholder="时间，如 08:00 → 10:00">
       </div>
       <input class="di-title" value="${escapeHtml((item && item.title) || "")}" placeholder="事项标题">
-      <input class="di-loc" value="${escapeHtml((item && item.loc) || "")}" placeholder="📍 位置，如：大皇宫（可被三方地图导航）">
+      <input class="di-loc" value="${escapeHtml((item && (Array.isArray(item.loc) ? item.loc.join("；") : item.loc)) || "")}" placeholder="📍 位置，多个地址用；分隔，如：素万那普机场；通塞码头">
       <textarea class="di-desc" rows="2" placeholder="描述，每行一条">${escapeHtml((item && item.desc || []).join("\n"))}</textarea>
     </div>`;
   // 左滑删除该项（带确认；删除后保存时才生效）
@@ -1080,7 +1089,7 @@ function collectDayForm() {
       dot: row.querySelector(".di-dot").value.trim(),
       time: row.querySelector(".di-time").value.trim(),
       title,
-      loc: row.querySelector(".di-loc").value.trim(),
+      loc: (() => { const ls = row.querySelector(".di-loc").value.split(/[；;|、]/).map((x) => x.trim()).filter(Boolean); return ls.length > 1 ? ls : (ls[0] || ""); })(),
       desc: row.querySelector(".di-desc").value.split("\n").map((x) => x.trim()).filter(Boolean)
     });
   });
