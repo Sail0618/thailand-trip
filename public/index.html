@@ -303,6 +303,21 @@
   </div>
 </div>
 
+<!-- 位置导航：三方地图选择 -->
+<div class="modal-overlay" id="modal-place-overlay" style="display:none">
+  <div class="modal">
+    <div class="modal-header">📍 用地图打开 <span id="place-name" style="color:var(--primary)"></span></div>
+    <div class="modal-body">
+      <div class="place-map-list" id="place-map-list"></div>
+      <p class="place-hint">选择地图 App 即可打开导航</p>
+    </div>
+    <div class="modal-footer">
+      <span style="flex:1"></span>
+      <button class="btn btn-outline" id="btn-place-close">关闭</button>
+    </div>
+  </div>
+</div>
+
 <!-- 通用确认弹窗 -->
 <div class="modal-overlay" id="modal-confirm-overlay" style="display:none">
   <div class="modal modal-sm">

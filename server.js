@@ -555,6 +555,7 @@ app.post("/api/days/:id", route(async (req, res) => {
           dot: cleanStr(it && it.dot, 20),
           time: cleanStr(it && it.time, 100),
           title: cleanStr(it && it.title, 300) || "行程项",
+          loc: cleanStr(it && it.loc, 200), // 位置信息（支持拉起三方地图导航）
           desc: Array.isArray(it && it.desc) ? it.desc.slice(0, 20).map((x) => cleanStr(x, 500)) : []
         }))
       : [];

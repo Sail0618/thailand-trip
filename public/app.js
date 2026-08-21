@@ -934,6 +934,7 @@ function renderDays() {
               <div class="tl-dot">${escapeHtml(it.dot)}</div>
               <div class="tl-time">${escapeHtml(it.time)}</div>
               <div class="tl-title">${escapeHtml(it.title)}</div>
+              ${it.loc ? `<div class="tl-loc" data-loc="${escapeHtml(it.loc)}" role="button" title="点击用地图导航">📍 ${escapeHtml(it.loc)}</div>` : ""}
               <div class="tl-desc"><ul>${(it.desc || []).map((x) => `<li>${escapeHtml(x)}</li>`).join("")}</ul></div>
             </div>`).join("")}
         </div>
@@ -1023,9 +1024,13 @@ function parseItineraryText(text) {
         const single = line.match(/^(\d{1,2}[:：]\d{2})/);
         if (single) { time = single[1]; line = line.slice(single[0].length).trim(); }
       }
+      // 位置：识别 📍xxx
+      let loc = "";
+      const lm = line.match(/📍\s*(.+)$/);
+      if (lm) { loc = lm[1].trim(); line = line.replace(/📍\s*.+$/, "").trim(); }
       // 去掉残留分隔符
       line = line.replace(/^[\s:：\-—|]+/, "").trim();
-      return { dot, time, title: line || "行程项", desc: [] };
+      return { dot, time, title: line || "行程项", loc, desc: [] };
     });
 }
 
@@ -1052,6 +1057,7 @@ function addDayItemRow(item) {
         <input class="di-time" value="${escapeHtml((item && item.time) || "")}" placeholder="时间，如 08:00 → 10:00">
       </div>
       <input class="di-title" value="${escapeHtml((item && item.title) || "")}" placeholder="事项标题">
+      <input class="di-loc" value="${escapeHtml((item && item.loc) || "")}" placeholder="📍 位置，如：大皇宫（可被三方地图导航）">
       <textarea class="di-desc" rows="2" placeholder="描述，每行一条">${escapeHtml((item && item.desc || []).join("\n"))}</textarea>
     </div>`;
   // 左滑删除该项（删除后保存时才生效）
@@ -1074,6 +1080,7 @@ function collectDayForm() {
       dot: row.querySelector(".di-dot").value.trim(),
       time: row.querySelector(".di-time").value.trim(),
       title,
+      loc: row.querySelector(".di-loc").value.trim(),
       desc: row.querySelector(".di-desc").value.split("\n").map((x) => x.trim()).filter(Boolean)
     });
   });
@@ -1087,6 +1094,25 @@ function collectDayForm() {
     tag: $("d-tag").value.trim(),
     items
   };
+}
+
+// 行程位置：拉起三方地图导航（高德/苹果/百度/Google）
+function openPlaceSheet(name) {
+  if (!name) return;
+  $("place-name").textContent = name;
+  const q = encodeURIComponent(name);
+  const apps = [
+    { app: "高德地图", logo: "/img/maps/gaode.jpg", url: `https://uri.amap.com/search?keyword=${q}` },
+    { app: "苹果地图", logo: "/img/maps/apple.jpg", url: `http://maps.apple.com/?q=${q}` },
+    { app: "百度地图", logo: "/img/maps/baidu.jpg", url: `https://api.map.baidu.com/geocoder?address=${q}&output=html` },
+    { app: "Google 地图", logo: "/img/maps/google.png", url: `https://www.google.com/maps/search/?api=1&query=${q}` }
+  ];
+  $("place-map-list").innerHTML = apps.map((a) =>
+    `<a class="place-map-item" href="${escapeHtml(a.url)}" target="_blank" rel="noopener">` +
+      `<img class="place-map-logo" src="${escapeHtml(a.logo)}" alt="${escapeHtml(a.app)}">` +
+      `<span>${escapeHtml(a.app)}</span>` +
+    `</a>`).join("");
+  $("modal-place-overlay").style.display = "flex";
 }
 
 function saveDay() {
@@ -1945,6 +1971,14 @@ function bootApp() {
   });
   $("btn-log-close").addEventListener("click", () => { $("modal-log-overlay").style.display = "none"; });
   $("modal-log-overlay").addEventListener("click", (e) => { if (e.target === e.currentTarget) $("modal-log-overlay").style.display = "none"; });
+
+  // 行程位置：点击拉起三方地图导航
+  document.addEventListener("click", (e) => {
+    const locEl = e.target.closest(".tl-loc");
+    if (locEl) { e.preventDefault(); openPlaceSheet(locEl.dataset.loc || ""); }
+  });
+  $("btn-place-close").addEventListener("click", () => { $("modal-place-overlay").style.display = "none"; });
+  $("modal-place-overlay").addEventListener("click", (e) => { if (e.target === e.currentTarget) $("modal-place-overlay").style.display = "none"; });
 
   // 每日行程：粘贴自动生成行程项
   const dPaste = $("d-paste");
