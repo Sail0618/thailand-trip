@@ -299,9 +299,7 @@ function buildMapLinks(loc) {
   const lat = c.lat.toFixed(6), lng = c.lng.toFixed(6);
   const name = encodeURIComponent(loc.name || "位置");
   return [
-    { app: "高德地图", logo: "/img/maps/gaode.jpg", url: `https://uri.amap.com/marker?position=${lng},${lat}&name=${name}` },
     { app: "苹果地图", logo: "/img/maps/apple.jpg", url: `http://maps.apple.com/?ll=${lat},${lng}&q=${name}` },
-    { app: "百度地图", logo: "/img/maps/baidu.jpg", url: `https://api.map.baidu.com/marker?location=${lat},${lng}&title=${name}&output=html&coord_type=wgs84` },
     { app: "Google 地图", logo: "/img/maps/google.png", url: `https://www.google.com/maps/search/?api=1&query=${lat},${lng}` }
   ];
 }
