@@ -1060,8 +1060,8 @@ function addDayItemRow(item) {
       <input class="di-loc" value="${escapeHtml((item && item.loc) || "")}" placeholder="📍 位置，如：大皇宫（可被三方地图导航）">
       <textarea class="di-desc" rows="2" placeholder="描述，每行一条">${escapeHtml((item && item.desc || []).join("\n"))}</textarea>
     </div>`;
-  // 左滑删除该项（删除后保存时才生效）
-  setupSwipeRow(row, () => row.remove());
+  // 左滑删除该项（带确认；删除后保存时才生效）
+  setupSwipeRow(row, () => confirmDialog("删除该行程项？", () => row.remove()));
   wrap.appendChild(row);
 }
 
