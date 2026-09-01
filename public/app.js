@@ -440,7 +440,7 @@ const COMPONENTS = [
   { id: "days",      title: "每日行程",    color: "tip",     hint: "共 11 天 · 点击展开", order: 1 },
   { id: "receipts",  title: "退税小票",    color: "receipt",  hint: "拍照上传 · 按人分组", order: 2, addBtn: "btn-add-receipt" },
   { id: "location",  title: "位置共享",    color: "location", hint: "授权后自动展示队友位置", order: 3 },
-  { id: "flights",   title: "航班总览",   color: "flight",  hint: "点击卡片可编辑 · 实时同步", order: 4, addBtn: "btn-add-flight" },
+  { id: "flights",   title: "航班总览",   color: "flight",  hint: "点击卡片可编辑 · 实时同步", order: 4 },
   { id: "todos",     title: "待办事项",    color: "alert",   hint: "点击可编辑 · 按日期排序", order: 5, addBtn: "btn-add-todo" }
 ];
 
@@ -882,54 +882,36 @@ function renderFlights() {
     const depTxt = f.dep && f.dep !== "待定" ? escapeHtml(f.dep) : null;
     const arrTxt = f.arr && f.arr !== "待定" ? escapeHtml(f.arr) : null;
     return `
-      <div class="swipe-row">
-        <button class="swipe-del" type="button">删除</button>
-        <div class="swipe-content flight-card ${cls}" data-id="${escapeHtml(f.id)}">
-          <div class="fc-top">
-            <span class="fc-no ${hasNo ? "" : "empty"}">✈ ${hasNo ? escapeHtml(f.flightNo) : "—"}</span>
-            <span class="fc-right">
-              <span class="status-pill ${cls}">${escapeHtml(f.status || "待定")}</span>
-              <span class="fc-actions">
-                <button class="btn-icon" data-act="edit" title="编辑">✏️</button>
-              </span>
+      <div class="flight-card ${cls}" data-id="${escapeHtml(f.id)}">
+        <div class="fc-top">
+          <span class="fc-no ${hasNo ? "" : "empty"}">✈ ${hasNo ? escapeHtml(f.flightNo) : "—"}</span>
+          <span class="fc-right">
+            <span class="status-pill ${cls}">${escapeHtml(f.status || "待定")}</span>
+            <span class="fc-actions">
+              <button class="btn-icon" data-act="edit" title="编辑">✏️</button>
             </span>
-          </div>
-          <div class="fc-times">
-            <span class="fc-time ${depTxt ? "" : "pending"}">${depTxt || "待定"}</span>
-            <span class="fc-track">
-              <span class="fc-dur">${dur ? escapeHtml(dur) : "—"}</span>
-              <span class="fc-line"></span>
-            </span>
-            <span class="fc-time ${arrTxt ? "" : "pending"}">${arrTxt || "待定"}</span>
-          </div>
-          <div class="fc-route">${dash(f.route)}</div>
-          <div class="fc-meta">
-            <span>📅 ${dash(f.date)}</span>
-            ${f.note ? `<span class="fc-note">${escapeHtml(f.note)}</span>` : ""}
-          </div>
+          </span>
+        </div>
+        <div class="fc-times">
+          <span class="fc-time ${depTxt ? "" : "pending"}">${depTxt || "待定"}</span>
+          <span class="fc-track">
+            <span class="fc-dur">${dur ? escapeHtml(dur) : "—"}</span>
+            <span class="fc-line"></span>
+          </span>
+          <span class="fc-time ${arrTxt ? "" : "pending"}">${arrTxt || "待定"}</span>
+        </div>
+        <div class="fc-route">${dash(f.route)}</div>
+        <div class="fc-meta">
+          <span>📅 ${dash(f.date)}</span>
+          ${f.note ? `<span class="fc-note">${escapeHtml(f.note)}</span>` : ""}
         </div>
       </div>`;
   }).join("");
 
   if (!cards) {
-    list.innerHTML = `<div class="fc-empty">暂无航班，点上方 ＋ 新增</div>`;
+    list.innerHTML = `<div class="fc-empty">暂无航班</div>`;
   } else {
-    list.innerHTML = cards + `
-      <div class="fc-add-row" id="fc-add-row">＋ 新增航班</div>`;
-    const addRow = $("fc-add-row");
-    if (addRow) addRow.addEventListener("click", openNewFlightModal);
-    // 左滑删除航班
-    list.querySelectorAll(".swipe-row").forEach((row) => {
-      const card = row.querySelector(".flight-card");
-      setupSwipeRow(row, () => {
-        const id = card.dataset.id;
-        confirmDialog("删除这段航班？", () => {
-          data.flights = data.flights.filter((f) => f.id !== id);
-          renderFlights();
-          apiDelete(`/api/flights/${id}`);
-        });
-      });
-    });
+    list.innerHTML = cards;
   }
 }
 
@@ -1547,15 +1529,6 @@ function openFlightModal(id) {
   $("f-bookingNo").value = f.bookingNo;
   $("f-status").value = f.status;
   $("f-note").value = f.note || "";
-  $("btn-del-flight").style.display = "inline-block";
-  $("modal-overlay").style.display = "flex";
-}
-
-function openNewFlightModal() {
-  editingFlightId = null;
-  $("f-date").value = ""; $("f-route").value = ""; $("f-dep").value = ""; $("f-arr").value = "";
-  $("f-flightNo").value = ""; $("f-bookingNo").value = ""; $("f-status").value = "待定"; $("f-note").value = "";
-  $("btn-del-flight").style.display = "none";
   $("modal-overlay").style.display = "flex";
 }
 
@@ -2115,10 +2088,9 @@ function bootApp() {
 
   // 新增按钮（动态渲染进组件头部）→ 用事件委托，不依赖渲染时机
   document.addEventListener("click", (e) => {
-    const addBtn = e.target.closest("#btn-add-flight, #btn-add-todo, #btn-add-bill, #btn-add-receipt");
+    const addBtn = e.target.closest("#btn-add-todo, #btn-add-bill, #btn-add-receipt");
     if (!addBtn) return;
-    if (addBtn.id === "btn-add-flight") openNewFlightModal();
-    else if (addBtn.id === "btn-add-todo") {
+    if (addBtn.id === "btn-add-todo") {
       openTodoModal(null);
     } else if (addBtn.id === "btn-add-bill") {
       $("b-item").value = "";
@@ -2152,16 +2124,6 @@ function bootApp() {
     }
     closeModal();
   });
-  $("btn-del-flight").addEventListener("click", () => {
-    if (!editingFlightId) return;
-    confirmDialog("删除这段航班？", () => {
-      data.flights = data.flights.filter((f) => f.id !== editingFlightId);
-      renderFlights();
-      apiDelete(`/api/flights/${editingFlightId}`);
-      closeModal();
-    });
-  });
-
   modalEnterToSave("modal-todo-overlay", "btn-save-todo");
   modalEnterToSave("modal-overlay", "btn-save-flight");
   $("btn-cancel-todo").addEventListener("click", closeModal);
