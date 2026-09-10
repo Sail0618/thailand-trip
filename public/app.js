@@ -1540,6 +1540,16 @@ function closeModal() {
   $("modal-fx-overlay").style.display = "none";
 }
 
+function delFlight() {
+  if (!editingFlightId) return;
+  confirmDialog("删除这段航班？", () => {
+    data.flights = (data.flights || []).filter((f) => f.id !== editingFlightId);
+    renderFlights();
+    apiDelete(`/api/flights/${editingFlightId}`);
+    closeModal();
+  });
+}
+
 // ============================================================
 // 预算单元格编辑
 // ============================================================
@@ -2126,6 +2136,7 @@ function bootApp() {
   });
   modalEnterToSave("modal-todo-overlay", "btn-save-todo");
   modalEnterToSave("modal-overlay", "btn-save-flight");
+  $("btn-del-flight").addEventListener("click", delFlight);
   $("btn-cancel-todo").addEventListener("click", closeModal);
   $("btn-save-todo").addEventListener("click", () => {
     const text = $("t-text").value.trim();
