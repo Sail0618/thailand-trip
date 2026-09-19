@@ -231,8 +231,9 @@ if (EXPORT_MODE) initExportPage();
 // 确认弹窗按钮（静态元素，直接绑定一次）
 document.addEventListener("DOMContentLoaded", () => {
   $("confirm-yes").addEventListener("click", () => {
+    // 先取出回调，再关闭弹窗（closeConfirmDialog 会清空 confirmCallback）
+    const cb = confirmCallback;
     closeConfirmDialog();
-    const cb = confirmCallback; confirmCallback = null;
     if (cb) cb();
   });
   $("confirm-no").addEventListener("click", closeConfirmDialog);
