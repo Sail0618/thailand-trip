@@ -1308,7 +1308,7 @@ function renderBudget() {
           <button class="swipe-del" type="button">删除</button>
           <div class="swipe-content bill-row" data-id="${escapeHtml(b.id)}">
             <div class="br-main">
-              <div class="br-item">${escapeHtml(b.item)}${b.detail ? `<span class="br-detail"> · ${escapeHtml(b.detail)}</span>` : ""}</div>
+              <div class="br-item" data-act="edit-bill" title="点击编辑账单">${escapeHtml(b.item)}${b.detail ? `<span class="br-detail"> · ${escapeHtml(b.detail)}</span>` : ""}</div>
               <div class="br-nums">
                 <div class="br-num"><label>支出</label><span class="editable" data-field="spend" data-act="edit-budget">${fmtMoney(b.spend, sym)}</span></div>
                 <div class="br-num"><label>实收</label><span class="editable" data-field="paid" data-act="edit-budget">${fmtMoney(b.paid, sym)}</span></div>
@@ -1352,6 +1352,38 @@ function renderBudget() {
       startBudgetEdit(type, row.dataset.id, el, el.dataset.field);
     });
   });
+  // 点击账单条目名 → 打开编辑弹窗（可改名称/备注/金额/币种）
+  document.querySelectorAll("[data-act='edit-bill']").forEach((el) => {
+    el.addEventListener("click", (e) => {
+      e.stopPropagation();
+      const row = el.closest(".bill-row");
+      if (!row) return;
+      const type = el.closest(".budget-panel.cny") ? "cny" : "thb";
+      openBillModal(type, row.dataset.id);
+    });
+  });
+}
+
+// 账单弹窗：新增 / 编辑
+let editingBillType = null;
+let editingBillId = null;
+function openBillModal(type, id) {
+  editingBillType = type || null;
+  editingBillId = id || null;
+  const list = type === "thb" ? (data.budgetTHB || []) : (data.budgetCNY || []);
+  const b = id ? list.find((x) => x.id === id) : null;
+  const title = $("bill-modal-title");
+  if (title) title.textContent = b ? "编辑账单" : "新增账单";
+  $("b-type").value = b ? type : "cny";
+  $("b-type").disabled = !!b; // 编辑时锁定币种（避免跨表移动）
+  $("b-item").value = b ? (b.item || "") : "";
+  $("b-detail").value = b ? (b.detail || "") : "";
+  $("b-spend").value = b ? (b.spend || 0) : 0;
+  $("b-paid").value = b ? (b.paid || 0) : 0;
+  const isTHB = $("b-type").value === "thb";
+  $("b-spend-label").style.color = isTHB ? "#5D4037" : "#2E7D32";
+  $("b-paid-label").style.color = isTHB ? "#5D4037" : "#2E7D32";
+  $("modal-bill-overlay").style.display = "flex";
 }
 
 // ============================================================
@@ -1535,6 +1567,8 @@ function openFlightModal(id) {
 
 function closeModal() {
   editingTodoId = null; // 关闭待办弹窗时重置编辑态
+  editingBillId = null; // 关闭账单弹窗时重置编辑态
+  editingBillType = null;
   $("modal-overlay").style.display = "none";
   $("modal-todo-overlay").style.display = "none";
   $("modal-bill-overlay").style.display = "none";
@@ -2094,11 +2128,7 @@ function bootApp() {
     if (addBtn.id === "btn-add-todo") {
       openTodoModal(null);
     } else if (addBtn.id === "btn-add-bill") {
-      $("b-item").value = "";
-      $("b-detail").value = "";
-      $("b-spend").value = 0;
-      $("b-paid").value = 0;
-      $("modal-bill-overlay").style.display = "flex";
+      openBillModal(null);
     } else if (addBtn.id === "btn-add-receipt") {
       openReceiptModal(null);
     }
@@ -2169,9 +2199,18 @@ function bootApp() {
     const spend = Number($("b-spend").value) || 0;
     const paid =  Number($("b-paid").value)  || 0;
     const list = type === "thb" ? data.budgetTHB : data.budgetCNY;
-    list.push({ id: genId(type === "thb" ? "bt" : "bc"), item, detail, spend, paid });
-    renderBudget();
-    apiPost(`/api/budget/${type}`, { item, detail, spend, paid, version: data ? data.version : undefined });
+    if (editingBillId) {
+      // 编辑已有账单
+      const b = (list || []).find((x) => x.id === editingBillId);
+      if (b) Object.assign(b, { item, detail, spend, paid });
+      renderBudget();
+      apiPost(`/api/budget/${type}/${editingBillId}`, { item, detail, spend, paid, version: data ? data.version : undefined });
+    } else {
+      // 新增账单
+      list.push({ id: genId(type === "thb" ? "bt" : "bc"), item, detail, spend, paid });
+      renderBudget();
+      apiPost(`/api/budget/${type}`, { item, detail, spend, paid, version: data ? data.version : undefined });
+    }
     closeModal();
   });
 
