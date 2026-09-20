@@ -11,12 +11,9 @@
 // ============================================================
 // 数据安全
 // - ?export=1：只读本地缓存导出页（不联网、不改缓存），数据找回用
-// - 服务器数据 version 比本地缓存旧时，保留本地缓存并提示一键恢复线上
-//   （防止服务器被旧快照覆盖后，客户端又用旧快照覆盖本机好数据）
+// - 线上版本作为同步基准；服务器版本较旧时暂留本地缓存，不自动回写线上
 // ============================================================
 const EXPORT_MODE = new URLSearchParams(location.search).has("export");
-let restoreBannerShown = false;   // 恢复提示只弹一次
-let acceptServerOverride = false; // 用户点"暂不"后，接受服务器数据并恢复正常同步
 
 // 注册 PWA Service Worker（离线缓存页面外壳；导出页不注册）
 if ("serviceWorker" in navigator && !EXPORT_MODE) {
@@ -102,18 +99,11 @@ $("modal-install-overlay").addEventListener("click", (e) => { if (e.target === e
 }
 
 // 服务器数据是否应覆盖本地缓存
-// 判定"被回滚"：①服务器 version 低于缓存 ②缓存有退税小票/勾选待办但服务器没有（防旧快照覆盖）
+// 以线上 version 为准，避免旧缓存因待办/小票数量差异被误判为“更新”
 function freshShouldWin(cached, fresh) {
   if (!cached) return true;
-  if (acceptServerOverride) return true;
-  if ((Number(fresh && fresh.version) || 0) < (Number(cached.version) || 0)) return false;
-  const cRecs = (cached.receipts || []).length;
-  const fRecs = (fresh && Array.isArray(fresh.receipts) ? fresh.receipts : []).length;
-  const cDone = (cached.todos || []).filter((t) => t.done).length;
-  const fDone = (fresh && Array.isArray(fresh.todos) ? fresh.todos : []).filter((t) => t.done).length;
-  if (cRecs > 0 && fRecs === 0) return false;
-  if (cDone > 0 && fDone === 0) return false;
-  return true;
+  // 线上版本作为唯一同步基准，避免旧缓存因小票/待办数量差异被误判为“更新”。
+  return (Number(fresh && fresh.version) || 0) >= (Number(cached.version) || 0);
 }
 
 function initExportPage() {
@@ -170,60 +160,6 @@ function initExportPage() {
       setTimeout(() => URL.revokeObjectURL(a.href), 1000);
     });
   }
-}
-
-// 服务器数据被旧快照覆盖时，提示用本机缓存恢复线上（需用户确认）
-function showRestoreBanner(cached, fresh) {
-  if (!cached || restoreBannerShown) return;
-  restoreBannerShown = true;
-  const done = (cached.todos || []).filter((t) => t.done).length;
-  const recs = (cached.receipts || []).length;
-  const bar = document.createElement("div");
-  bar.style.cssText = "position:fixed;left:0;right:0;bottom:0;z-index:998;background:#FFF8E1;border-top:1px solid #F0E0A0;padding:14px 16px calc(14px + env(safe-area-inset-bottom));box-shadow:0 -4px 16px rgba(0,0,0,.08)";
-  bar.innerHTML = `<div style="max-width:560px;margin:0 auto;font-size:13px;line-height:1.7">
-    <b>⚠️ 检测到本机缓存比线上新</b>（缓存 v${escapeHtml(cached.version)} · 线上 v${escapeHtml(fresh ? fresh.version : "?")}）<br>
-    缓存里还有 <b>${done}</b> 项勾选待办、<b>${recs}</b> 条小票，要<b>用本机数据恢复线上</b>吗？
-    <div style="display:flex;gap:10px;margin-top:10px">
-      <button id="rb-yes" style="flex:1;padding:11px;border:none;border-radius:10px;background:#0D7D6B;color:#fff;font-size:14px;font-weight:600">恢复线上数据</button>
-      <button id="rb-no" style="flex:1;padding:11px;border:none;border-radius:10px;background:#fff;color:#6E7470;font-size:14px;border:1px solid #E0DDD6">暂不</button>
-    </div></div>`;
-  document.body.appendChild(bar);
-  const close = () => bar.remove();
-  document.getElementById("rb-no").addEventListener("click", () => {
-    acceptServerOverride = true; // 用户选择不用本机覆盖：恢复正常同步
-    close();
-    poll();
-  });
-  document.getElementById("rb-yes").addEventListener("click", async () => {
-    document.getElementById("rb-yes").textContent = "恢复中…";
-    try {
-      const res = await fetch("/api/data", {
-        method: "PUT",
-        headers: { "Content-Type": "application/json", "X-User": encodeURIComponent(getUserName()) },
-        body: JSON.stringify({ ...cached, version: (fresh && fresh.version) })
-      });
-      if (res.ok) {
-        const j = await res.json().catch(() => ({}));
-        data = { ...cached, version: j.version || cached.version };
-        saveCache(data);
-        renderAll();
-        setSync("online", "✅ 已用本机数据恢复线上");
-        close();
-      } else if (res.status === 409) {
-        setSync("offline", "数据已被他人更新，正在刷新…");
-        close();
-        poll();
-      } else {
-        setSync("offline", "恢复失败，请重试");
-        const yesBtn = document.getElementById("rb-yes");
-        if (yesBtn) yesBtn.textContent = "重试恢复";
-      }
-    } catch (e) {
-      setSync("offline", "恢复失败，请重试");
-      const yesBtn = document.getElementById("rb-yes");
-      if (yesBtn) yesBtn.textContent = "重试恢复";
-    }
-  });
 }
 
 if (EXPORT_MODE) initExportPage();
@@ -498,10 +434,9 @@ async function fetchData() {
     const same = data && data.version === fresh.version && data.lastUpdated === fresh.lastUpdated;
     if (cached && !freshShouldWin(cached, fresh)) {
       // 服务器数据比本地缓存旧（服务器被旧快照覆盖/回滚）：
-      // 保留本地缓存，避免把还带勾选状态/小票的数据覆盖掉，并提示可恢复
+      // 保留本地缓存，但不自动回写线上，也不弹出同步确认
       setSync("offline", "⚠️ 服务器数据较旧，已保留本机缓存");
       if (cached) { data = cached; renderAll(); }
-      showRestoreBanner(cached, fresh);
     } else {
       data = fresh;
       saveCache(fresh);
